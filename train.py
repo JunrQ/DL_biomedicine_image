@@ -8,7 +8,7 @@ import time
 
 import tensorflow as tf
 
-CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\vgg_16.ckpt'
+from file_path import *
 
 
 

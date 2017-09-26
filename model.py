@@ -10,16 +10,7 @@ import numpy as np
 import skimage.io
 import tensorflow as tf
 
-# where to save .pkl, after concatnate images
-PKL_PATH = r''
-# where to save dataset: self.raw_dataset, self.vocab, after load_data
-RAW_DATASET_PATH = r''
-# saved image parent path, parent_path + gene_stage + .format, give the image file path
-DATASET_PAR_PATH = PKL_PATH
-# csvfile path
-CSVFILE_PATH = r'E:\csfile.csv'
-# original image parent path
-IMAGE_PARENT_PATH = r'E:\pic_data'
+from file_path import *
 
 DATASET_ITERATOR = ops.csvfile2iterator(csvfile_path=CSVFILE_PATH, parent_path=IMAGE_PARENT_PATH)
 
