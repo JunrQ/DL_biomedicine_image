@@ -3,9 +3,9 @@
 A tensorflow implementation of the biomedicine images classification model using deep learning.
 
 ## Content
-* [Model Overview](#Model Overview)
+* [Model Overview](#Model-Overview)
     * [Introduction](#Introduction)
-    * [Image embedding](#Image embedding)
+    * [Image embedding](#Image-embedding)
 
 ## Model Overview
 
