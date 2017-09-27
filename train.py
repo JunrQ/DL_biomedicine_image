@@ -26,8 +26,23 @@ def main(initial_learning_rate=0.001,
          print_every_steps=100,
          num_pred=10,
          shuffle=True,
-         batch_size=5
+         batch_size=5,
+         concatenate_input=False
           ):
+  """
+
+  :param initial_learning_rate:
+  :param optimizer:
+  :param max_steps:
+  :param print_every_steps:
+  :param num_pred:
+  :param shuffle:
+  :param batch_size:
+  :param concatenate_input: if True: batch_size concatenated images and corresponding labels are input
+                            if False: a group are a batch
+
+  :return:
+  """
   g = tf.Graph()
   with g.as_default():
     
@@ -46,7 +61,8 @@ def main(initial_learning_rate=0.001,
      channels=3
     """
     model = Model(ckpt_path=CKPT_PATH,
-                  mode='supervise')
+                  mode='supervise',
+                  concatenate_input=concatenate_input)
 
     model.build()
 
