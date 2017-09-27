@@ -40,14 +40,14 @@ import tensorflow as tf
 slim = tf.contrib.slim
 
 def vgg16_base_layer(images,
-                    output_layer='conv4',
+                    output_layer='conv4/conv4_3',
                     trainable=True,
                     is_training=True,
                     weight_decay=0.00004,
                     stddev=0.1,
                     dropout_keep_prob=0.5,
                     add_summaries=False,
-                    scope='vgg_16'):
+                    scope='base'):
   """
   """
   if trainable:
@@ -56,20 +56,21 @@ def vgg16_base_layer(images,
     weights_regularizer = None
     is_training = False
 
-  with tf.variable_scope(scope, "vgg_16", [images]) as scope:
-    with slim.arg_scope(
-        [slim.conv2d, slim.fully_connected],
-        weights_regularizer=weights_regularizer,
-        trainable=trainable):
-      with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                      activation_fn=tf.nn.relu,
-                      weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
-                      biases_initializer=tf.zeros_initializer()):
-        with slim.arg_scope([slim.conv2d], padding='SAME'):
-          net, end_points = vgg_16(images, is_training=is_training, scope=scope)
 
-          with tf.variable_scope("logits"):
-            output = end_points['vgg_16/' + output_layer]
+  with slim.arg_scope(
+      [slim.conv2d, slim.fully_connected],
+      weights_regularizer=weights_regularizer,
+      trainable=trainable):
+    with slim.arg_scope([slim.conv2d, slim.fully_connected],
+                    activation_fn=tf.nn.relu,
+                    weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
+                    biases_initializer=tf.zeros_initializer()):
+      with slim.arg_scope([slim.conv2d], padding='SAME'):
+        net, end_points = vgg_16(images, is_training=is_training, scope='vgg_16')
+        # print(end_points)
+
+        with tf.variable_scope("logits"):
+          output = end_points['vgg_16/' + output_layer]
 
   # Add summaries.
   if add_summaries:
@@ -111,10 +112,10 @@ def adaption_layer(inputs,
       # pool0
       net = slim.max_pool2d(inputs, [2, 2], scope='pool0')
       # conv1
-      net = slim.conv2d(net, filters[0], kernels_size[0], strides=(2, 2), scope='conv1')
+      net = slim.conv2d(net, filters[0], kernels_size[0], stride=(2, 2), scope='conv1')
       # mean pooling pool1
       shape = net.get_shape()
-      net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool1")
+      net = tf.reduce_mean(net, axis=(1, 2), keep_dims=True)
 
       for idx in range(fc_layers_num):
         net = slim.conv2d(net, filters[1], kernels_size[1], scope='fc'+str(idx+1))

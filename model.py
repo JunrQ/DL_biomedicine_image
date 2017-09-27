@@ -7,7 +7,7 @@ import image_processing
 import ops
 
 import os
-import cPickle as pickle
+import pickle
 import numpy as np
 import skimage.io
 import tensorflow as tf
@@ -30,7 +30,7 @@ class Model(object):
                adaption_output_dim=1024,
                mode="train",
                vgg_trainable=False,
-               vgg_output_layer='conv4',
+               vgg_output_layer='conv4/conv4_3',
                adaption_layer_filters=[4096, 4096],
                adaption_kernels_size=[[5, 5], [1, 1]],
                adaption_fc_layers_num=2,
@@ -111,7 +111,7 @@ class Model(object):
   def load_data(self):
     """
     Output:
-      self.raw_dataset: should be a list of dictionary whose element 
+      self.raw_dataset: should be a list of dictionary whose element
                         should be {'filename':
                                    'label_index':}
     Usage:
@@ -122,8 +122,9 @@ class Model(object):
       # if exist, get it.
       if os.path.exists(RAW_DATASET_PATH):
         with open(RAW_DATASET_PATH, 'rb') as f:
-          self.raw_dataset = pickle.load(f)
           self.vocab = pickle.load(f)
+          self.raw_dataset = pickle.load(f)
+          # print(self.raw_dataset)
       else:
         self.raw_dataset = []
         self.vocab = []
@@ -133,6 +134,7 @@ class Model(object):
         tmp_vocab_count = []
         # TODO: fill in keys and **DATASET_ITERATOR**
         for ele in DATASET_ITERATOR:
+          # print(ele)
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
           label = ele['labels']
@@ -178,7 +180,7 @@ class Model(object):
               tmp_vocab.append(tmp_word)
               tmp_vocab_count.append(0)
             else:
-              idx = tmp_vocab.index(tmp_vocab)
+              idx = tmp_vocab.index(tmp_word)
               tmp_vocab_count[idx] += 1
 
         # only the top k labels
@@ -213,13 +215,21 @@ class Model(object):
         for ele in tmp_dataset_1:
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
+          # print(urls_list)
           label = ele['annot']
+          img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
+          if os.path.exists(img_file_name):
+            self.raw_dataset.append({'filename': img_file_name,
+                                   'label_index': label_index})
+            continue
           # read in image and concatenate through cols
           _image = ops.get_image_from_urls_list_concat_dim0(
-                                  urls_list, 
+                                  urls_list,
                                   shape=(self.height, self.width, self.channels))
+          #print(_image.shape)
+          if isinstance(_image, int):
+            continue
 
-          img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
           label_index = ops.annot2vec(label, self.vocab)
           skimage.io.imsave(img_file_name, _image)
           self.raw_dataset.append({'filename': img_file_name,
@@ -238,15 +248,16 @@ class Model(object):
       self.input_seqs
       self.target_seqs (training and eval only)
     """
-    _decoder = {'bmp': tf.image.decode_bmp,
-                'jpg': tf.image.decode_jpeg,
-                'jpeg': tf.image.decode_jpeg,
-                'png': tf.image.decode_pbg
-                }
-    if self.image_foramt not in _decoder.keys:
-      decoder = tf.image.decode_image
-    else:
-      decoder = _decoder[self.image_foramt]
+    # _decoder = {'bmp': tf.image.decode_bmp,
+    #             'jpg': tf.image.decode_jpeg,
+    #             'jpeg': tf.image.decode_jpeg,
+    #             'png': tf.image.decode_pbg
+    #             }
+    # if self.image_foramt not in _decoder.keys:
+    #   decoder = tf.image.decode_image
+    # else:
+    #   decoder = _decoder[self.image_foramt]
+    decoder = tf.image.decode_image
 
 
     if self.mode == "inference":
@@ -294,8 +305,8 @@ class Model(object):
     elif self.mode == 'supervise':
       # In supervise mode, images and inputs are fed via placeholders.
 
-      self.images = tf.placeholder(dtype=tf.float64, shape=[None, None, None, self.channels], name="image_feed")
-      self.targets = tf.placeholder(dtype=tf.float64,
+      self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
+      self.targets = tf.placeholder(dtype=tf.float32,
                                   shape=[None, None],  # batch_size
                                   name="input_feed")
 
@@ -308,7 +319,7 @@ class Model(object):
     VGG16 + adaption layers
     see image_embedding for details.
     Args:
-    
+
     Output:
       self.adaption_output: shape(batch_size, adaption_output_dim)
     """
@@ -343,7 +354,7 @@ class Model(object):
           # pool0
           net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
           # conv1
-          net = slim.conv2d(net, self.adaption_layer_filters[0], self.adaption_kernels_size[0], strides=(2, 2), scope='conv1')
+          net = slim.conv2d(net, self.adaption_layer_filters[0], self.adaption_kernels_size[0], stride=(2, 2), scope='conv1')
           # fc
           net = slim.conv2d(net, 1024, [1, 1], scope='fc0')
           # fc
@@ -358,9 +369,9 @@ class Model(object):
       raise ValueError('Wrong predict_way!')
 
     self.all_vars = tf.global_variables()
-    # self.vgg_variables = [v for v in self.all_vars if v.name.startswith('vgg_16')]
-    self.vgg_variables = tf.get_collection(
-        tf.GraphKeys.GLOBAL_VARIABLES, scope="vgg_16")
+    self.vgg_variables = [v for v in self.all_vars if v.name.startswith('vgg_16')]
+    # self.vgg_variables = tf.get_collection(
+    #     tf.GraphKeys.GLOBAL_VARIABLES, scope="base")
 
   def build_output_layer(self):
     """
@@ -387,12 +398,12 @@ class Model(object):
     """Build model.
     Build loss function
     """
-    # 
-    net_output = self.adaption_output
+    #
+    self.output = self.adaption_output
     if self.predict_way == 'fc':
       logits = self.output
       labels = self.targets
-      cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits, labels)
+      cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
       self.cross_entropy_loss = tf.reduce_mean(cross_entropy)
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy_loss] + regularization_losses)
@@ -424,7 +435,7 @@ class Model(object):
   def setup_finetune_model_initializer(self):
     """
     """
-    # Restore inception variables only.
+    # Restore inception variables only
     saver = tf.train.Saver(self.vgg_variables)
     def restore_fn(sess):
       tf.logging.info("Restoring vgg variables from checkpoint file %s",

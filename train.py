@@ -23,7 +23,7 @@ def sigmoid(x):
 def main(initial_learning_rate=0.001,
          optimizer=tf.train.AdamOptimizer(0.0001),
          max_steps=99999999,
-         print_every_steps=100,
+         print_every_steps=10,
          num_pred=10,
          shuffle=True,
          batch_size=5,
@@ -45,7 +45,7 @@ def main(initial_learning_rate=0.001,
   """
   g = tf.Graph()
   with g.as_default():
-    
+
     # Default parameters
     """
      predict_way='fc',
@@ -66,7 +66,7 @@ def main(initial_learning_rate=0.001,
 
     model.build()
 
-    if model.mode == 'suprevise':
+    if model.mode == 'supervise':
       # Set up the learning rate.
       learning_rate_decay_fn = None
 
@@ -75,25 +75,26 @@ def main(initial_learning_rate=0.001,
           )
 
       init = tf.initialize_all_variables()
-      saver = tf.train.Saver()
+      saver_model = tf.train.Saver()
       if shuffle:
         np.random.shuffle(model.raw_dataset)
       dataset = itertools.cycle(iter(model.raw_dataset))
 
       with tf.Session() as sess:
         sess.run(init)
-        sess.run(model.init_fn)
+        model.init_fn(sess)
         tf.train.start_queue_runners(sess=sess)
 
-        for x in xrange(max_steps + 1):
+        for x in range(max_steps + 1):
           single_data = dataset.__next__()
-
+          # print(single_data)
           # read in images
           while True:
             i = ops.read_image_from_single_file(single_data['filename'])
             l = single_data['label_index']
-            if i != -1:
-              i = np.reshape(i, (-1, model.height, model.width))
+            if not isinstance(i, int):
+              # i = np.reshape(i, (-1, model.height, model.width))
+              i = i[None, :]
               l = l[None, :]
               break
           if model.concatenate_input == True:
@@ -101,13 +102,17 @@ def main(initial_learning_rate=0.001,
               while True:
                 i0 = ops.read_image_from_single_file(single_data['filename'])
                 l0 = single_data['label_index']
-                if i0 != -1:
+                if not isinstance(i0, int):
                   i0 = i0[None, :]
                   l0 = l0[None, :]
                   break
               i = np.concatenate((i, i0))
               l = np.concatenate((l, l0))
+          else:
+            i = np.reshape(i, (-1, model.height, model.width, model.channels))
 
+          print(i.shape)
+          print(l.shape)
           # assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
           step = sess.run(model.global_step)
 
