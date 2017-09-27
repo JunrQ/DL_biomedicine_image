@@ -120,7 +120,7 @@ def main(initial_learning_rate=0.001,
           # assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
           # step = sess.run(model.global_step)
 
-          if x_step > 1 and x_step % print_every_steps:
+          if x_step > 1 and x_step % print_every_steps == 0:
             sess.run(model.assing_is_training_false_op)
 
             prob = sess.run([model.output,],
