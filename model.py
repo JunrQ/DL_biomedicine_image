@@ -361,7 +361,7 @@ class Model(object):
           net = slim.conv2d(net, self.classes_num, [1, 1], scope='fc1')
           # max pooling pool1
           shape = net.get_shape()
-          net = slim.max_pool2d(net, shape[1:3], padding="VALID", scope="pool1")
+          net = tf.reduce_max(net, axis=(1, 2), keep_dims=False)
 
       self.adaption_output = net
 
@@ -399,7 +399,6 @@ class Model(object):
     Build loss function
     """
     #
-    self.output = self.adaption_output
     if self.predict_way == 'fc':
       logits = self.output
       labels = self.targets
@@ -413,8 +412,9 @@ class Model(object):
       pass
     elif self.predict_way == 'batch_max':
       logits = self.output
+      output_prob = tf.sigmoid(logits)
       labels = self.targets
-      cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits, labels)
+      cross_entropy = -tf.reduce_sum((1 - labels) * tf.log(1 - output_prob + 1e-10) + labels * tf.log(output_prob + 1e-10))
       self.cross_entropy_loss = tf.reduce_mean(cross_entropy)
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy_loss] + regularization_losses)
@@ -449,6 +449,7 @@ class Model(object):
     self.load_data()
     self.build_inputs()
     self.build_finetune_model()
+    self.build_output_layer()
     self.build_model()
     self.setup_finetune_model_initializer()
     self.setup_global_step()

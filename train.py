@@ -22,12 +22,13 @@ def sigmoid(x):
 
 def main(initial_learning_rate=0.001,
          optimizer=tf.train.AdamOptimizer(0.0001),
-         max_steps=99999999,
-         print_every_steps=10,
+         max_steps=999999999,
+         print_every_steps=500,
          num_pred=10,
          shuffle=True,
          batch_size=5,
-         concatenate_input=False
+         concatenate_input=False,
+         predict_way='batch_max'
           ):
   """
 
@@ -62,11 +63,13 @@ def main(initial_learning_rate=0.001,
     """
     model = Model(ckpt_path=CKPT_PATH,
                   mode='supervise',
-                  concatenate_input=concatenate_input)
+                  concatenate_input=concatenate_input,
+                  predict_way=predict_way)
 
     model.build()
+    vocab = np.array(model.vocab)
 
-    if model.mode == 'supervise':
+    if model.mode == 'supervise' and predict_way == 'batch_max':
       # Set up the learning rate.
       learning_rate_decay_fn = None
 
@@ -85,11 +88,11 @@ def main(initial_learning_rate=0.001,
         model.init_fn(sess)
         tf.train.start_queue_runners(sess=sess)
 
-        for x in range(max_steps + 1):
-          single_data = dataset.__next__()
+        for x_step in range(max_steps + 1):
           # print(single_data)
           # read in images
           while True:
+            single_data = dataset.__next__()
             i = ops.read_image_from_single_file(single_data['filename'])
             l = single_data['label_index']
             if not isinstance(i, int):
@@ -100,6 +103,7 @@ def main(initial_learning_rate=0.001,
           if model.concatenate_input == True:
             for tmp in range(batch_size - 1):
               while True:
+                single_data = dataset.__next__()
                 i0 = ops.read_image_from_single_file(single_data['filename'])
                 l0 = single_data['label_index']
                 if not isinstance(i0, int):
@@ -111,31 +115,37 @@ def main(initial_learning_rate=0.001,
           else:
             i = np.reshape(i, (-1, model.height, model.width, model.channels))
 
-          print(i.shape)
-          print(l.shape)
+          # print(i.shape)
+          # print(l.shape)
           # assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-          step = sess.run(model.global_step)
+          # step = sess.run(model.global_step)
 
-          if step > 1 and step % print_every_steps:
+          if x_step > 1 and x_step % print_every_steps:
             sess.run(model.assing_is_training_false_op)
 
             prob = sess.run([model.output,],
                             feed_dict={model.images: i,
                                        model.targets: l})
 
+            # print(prob)
             sess.run(model.assing_is_training_true_op)
 
-            for single_batch in range(len(prob)):
+            for single_batch in range(len(prob[0])):
               target = ''
               prediction = ''
-              pred_result = np.argsort(prob[single_batch])
-              for s in model.vocab[l[single_batch] == 1.]:
-                target += (s + ' ')
+              pred_result = np.argsort(prob[0][single_batch])
+              # print(prob[0].shape)
+              # print(l[single_batch] == 1)
+              # print(type(model.vocab))
+              # print(pred_result)
+
+              for s in vocab[l[single_batch] == 1.]:
+                target += (s + ' \n')
               print('Target: %s' % target)
 
               for s in range(num_pred):
                 # print(pred_result)
-                prediction += (str(model.vocab[pred_result[s]]) + ' ')
+                prediction += (str(vocab[pred_result[s]]) + ' \n')
               print('Prediction: %s' % prediction)
 
           train_op.run(feed_dict={model.images: i,
