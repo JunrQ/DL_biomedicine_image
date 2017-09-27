@@ -115,11 +115,6 @@ def adaption_layer(inputs,
       # mean pooling pool1
       shape = net.get_shape()
       net = slim.avg_pool2d(net, shape[1:3], padding="VALID", scope="pool1")
-      net = slim.dropout(
-          net,
-          keep_prob=dropout_keep_prob,
-          is_training=is_training,
-          scope="dropout1")
 
       for idx in range(fc_layers_num):
         net = slim.conv2d(net, filters[1], kernels_size[1], scope='fc'+str(idx+1))
@@ -127,12 +122,6 @@ def adaption_layer(inputs,
                            scope='dropout'+str(idx+1))
 
       net = slim.flatten(net, scope="flatten")
-
-  # Add summaries.
-  # if add_summaries:
-  #   for v in end_points.values():
-  #     tf.contrib.layers.summaries.summarize_activation(v)
-
   return net
 
 

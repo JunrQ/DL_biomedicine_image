@@ -1,4 +1,6 @@
-
+"""
+Build the model.
+"""
 
 from image_embedding import vgg16_base_layer, adaption_layer
 import image_processing
@@ -9,6 +11,7 @@ import cPickle as pickle
 import numpy as np
 import skimage.io
 import tensorflow as tf
+slim = tf.contrib.slim
 
 from file_path import *
 
@@ -44,7 +47,8 @@ class Model(object):
                only_word=None,
                num_preprocess_threads=4,
                batch_size=5,
-               weight_decay=0.00004
+               weight_decay=0.00004,
+               cnn_input_length=2048
                ):
     """
     Args:
@@ -54,8 +58,13 @@ class Model(object):
                   **If you change the parameters, you should delete the RAW_DATASET_PATH file**
       image_foramt: Used when saving concatenated images
       predict_way:
-          'fc'
-          'cnn'
+          'fc': avgpool2d, if images are concatenate(concatenate_input=True), a group images for labels
+                else(concatenate_input=False), a single image for labels
+                besides, after pool layer, there a self.adaption_fc_layers_num fc
+          'cnn':
+          'batch_max': if concatenate_input == False, then do max pooling in batch after in dim(1, 2)
+                        else(concatenate_input == True), then do max pooling in dim(1, 2)
+                        the lase layer is maxpooling layer
       image_concatnate_way: Original should be concatnate through columns
       tok_k_labels: if not None, e.g. 5, then top 5 labels are concerned
       concatenate_input: if True, input are concatenate, else, batch
@@ -63,7 +72,11 @@ class Model(object):
       stage_allowed=[5, 6],
       max_img=
       concatenate_input: if True, the input(a group: gene stage) for the model is concatenate,
+                        and batch is composed of those concatenated images, so batch size can be
+                        fixed to a number like 5.
                         if False, the input(a group: gene stage) for the model is treated as a batch
+                        and batch is composed of those single images and same labels, so batch size is
+                        not fixed, and depends on number of images in a gene stage group.
     """
     self.ckpt_path = ckpt_path
     self.mode = mode
@@ -93,6 +106,7 @@ class Model(object):
     self.is_training = tf.Variable(True, dtype=tf.bool)
     self.assing_is_training_true_op = tf.assign(self.is_training, True)
     self.assing_is_training_false_op = tf.assign(self.is_training, False)
+    self.cnn_input_length = cnn_input_length
 
   def load_data(self):
     """
@@ -117,7 +131,7 @@ class Model(object):
         tmp_dataset = []
         tmp_vocab = []
         tmp_vocab_count = []
-        # [TODO]: fill in keys and **DATASET_ITERATOR**
+        # TODO: fill in keys and **DATASET_ITERATOR**
         for ele in DATASET_ITERATOR:
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
@@ -243,7 +257,7 @@ class Model(object):
                                   name="input_feed")
 
 
-    else:
+    elif self.mode == 'train':
       # Train mode
       data = self.raw_dataset
       filenames = [d['filename'] for d in data]
@@ -277,6 +291,17 @@ class Model(object):
         self.images = images
         self.targets =label_index_batch
 
+    elif self.mode == 'supervise':
+      # In supervise mode, images and inputs are fed via placeholders.
+
+      self.images = tf.placeholder(dtype=tf.float64, shape=[None, None, None, self.channels], name="image_feed")
+      self.targets = tf.placeholder(dtype=tf.float64,
+                                  shape=[None, None],  # batch_size
+                                  name="input_feed")
+
+    else:
+      raise ValueError('Wrong mode!')
+
 
   def build_finetune_model(self):
     """
@@ -287,15 +312,50 @@ class Model(object):
     Output:
       self.adaption_output: shape(batch_size, adaption_output_dim)
     """
+    self.classes_num = len(self.vocab)
     self.vgg_output = vgg16_base_layer(self.images,
-                                      is_training= self.is_training,
-                                      trainable=self.vgg_trainable,
-                                      output_layer=self.vgg_output_layer,
-                                      weight_decay=self.weight_decay)
-    self.adaption_output = adaption_layer(self.vgg_output,
-                                          is_training=self.is_training,
-                                          num_output=self.adaption_output_dim,
-                                          weight_decay=self.weight_decay)
+                                       is_training=self.is_training,
+                                       trainable=self.vgg_trainable,
+                                       output_layer=self.vgg_output_layer,
+                                       weight_decay=self.weight_decay)
+    if self.predict_way == 'fc':
+      self.adaption_output = adaption_layer(self.vgg_output,
+                                            is_training=self.is_training,
+                                            num_output=self.adaption_output_dim,
+                                            fc_layers_num=self.adaption_fc_layers_num,
+                                            weight_decay=self.weight_decay,
+                                            filters=self.adaption_layer_filters,
+                                            kernels_size=self.adaption_kernels_size)
+    elif self.predict_way == 'cnn':
+      self.adaption_output = adaption_layer(self.vgg_output,
+                                            is_training=self.is_training,
+                                            num_output=self.cnn_input_length,
+                                            fc_layers_num=0,
+                                            weight_decay=self.weight_decay,
+                                            filters=self.adaption_layer_filters,
+                                            kernels_size=self.adaption_kernels_size)
+    elif self.predict_way == 'batch_max':
+
+      with tf.variable_scope("adaption", values=[self.vgg_output]) as scope:
+        with slim.arg_scope(
+                [slim.conv2d, slim.fully_connected],
+                weights_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay)):
+          # pool0
+          net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
+          # conv1
+          net = slim.conv2d(net, self.adaption_layer_filters[0], self.adaption_kernels_size[0], strides=(2, 2), scope='conv1')
+          # fc
+          net = slim.conv2d(net, 1024, [1, 1], scope='fc0')
+          # fc
+          net = slim.conv2d(net, self.classes_num, [1, 1], scope='fc1')
+          # max pooling pool1
+          shape = net.get_shape()
+          net = slim.max_pool2d(net, shape[1:3], padding="VALID", scope="pool1")
+
+      self.adaption_output = net
+
+    else:
+      raise ValueError('Wrong predict_way!')
 
     self.all_vars = tf.global_variables()
     # self.vgg_variables = [v for v in self.all_vars if v.name.startswith('vgg_16')]
@@ -304,22 +364,28 @@ class Model(object):
 
   def build_output_layer(self):
     """
-
+    Output layer
     """
-    self.classes_num = len(self.vocab)
-
-    self.output = tf.layers.conv2d(self.adaption_output, self.classes_num, [1, 1],
+    if self.predict_way == 'fc':
+      self.output = tf.layers.conv2d(self.adaption_output, self.classes_num, [1, 1],
                       kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                      activation_fn=None,
-                      normalizer_fn=None,
-                      scope='fc_output')
+                      name='fc_output')
+    elif self.predict_way == 'cnn':
+      pass
+    elif self.predict_way == 'batch_max':
+      if self.concatenate_input == True:
+        self.output = self.adaption_output
+      else:
+        self.batch_max = tf.reduce_max(self.adaption_output, axis=(0, ), keep_dims=True)
+        self.output =self.batch_max
+    else:
+      raise ValueError('Wrong predict_way!')
 
 
 
   def build_model(self):
     """Build model.
     Build loss function
-
     """
     # 
     net_output = self.adaption_output
@@ -334,6 +400,13 @@ class Model(object):
     elif self.predict_way == 'cnn':
       # TODO
       pass
+    elif self.predict_way == 'batch_max':
+      logits = self.output
+      labels = self.targets
+      cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits, labels)
+      self.cross_entropy_loss = tf.reduce_mean(cross_entropy)
+      regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+      self.total_loss = tf.add_n([self.cross_entropy_loss] + regularization_losses)
 
     else:
       raise ValueError('Wrong predict_way!')
@@ -353,12 +426,10 @@ class Model(object):
     """
     # Restore inception variables only.
     saver = tf.train.Saver(self.vgg_variables)
-
     def restore_fn(sess):
       tf.logging.info("Restoring vgg variables from checkpoint file %s",
                       self.ckpt_path)
       saver.restore(sess, self.ckpt_path)
-
     self.init_fn = restore_fn
 
   def build(self):
