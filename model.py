@@ -57,27 +57,32 @@ class Model(object):
                  with multi images in a group concatnate through cols. Just make it True.
                  Note:
                   **If you change the parameters, you should delete the RAW_DATASET_PATH file**
+      vgg_output_layer: output layer of vgg model
+      vgg_trainable:
       image_foramt: Used when saving concatenated images
       predict_way:
-          'fc': avgpool2d, if images are concatenate(concatenate_input=True), a group images for labels
+          'fc': [not test]avgpool2d, if images are concatenate(concatenate_input=True), a group images for labels
                 else(concatenate_input=False), a single image for labels
                 besides, after pool layer, there a self.adaption_fc_layers_num fc
-          'cnn':
+          TODO: 'cnn':
           'batch_max': if concatenate_input == False, then do max pooling in batch after in dim(1, 2)
                         else(concatenate_input == True), then do max pooling in dim(1, 2)
                         the lase layer is maxpooling layer
       image_concatnate_way: Original should be concatnate through columns
       tok_k_labels: if not None, e.g. 5, then top 5 labels are concerned
       concatenate_input: if True, input are concatenate, else, batch
-      deprecated_word=None,
-      stage_allowed=[5, 6],
-      max_img=
+      deprecated_word: None or list of words
+      stage_allowed: [5, 6],
+      max_img: if a group of images exceed max_img, deprecate
+      min_annot_num: if total number of individual label in whole dataset labels is less than min_annot_num
+                      then, abandon
       concatenate_input: if True, the input(a group: gene stage) for the model is concatenate,
                         and batch is composed of those concatenated images, so batch size can be
                         fixed to a number like 5.
                         if False, the input(a group: gene stage) for the model is treated as a batch
                         and batch is composed of those single images and same labels, so batch size is
                         not fixed, and depends on number of images in a gene stage group.
+      weight_decay: l2_regularizer
     """
     self.ckpt_path = ckpt_path
     self.mode = mode
