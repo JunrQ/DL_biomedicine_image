@@ -42,6 +42,7 @@ class Model(object):
                concatenate_input=True,
                deprecated_word=None,
                stage_allowed=[5, 6],
+               min_annot_num=40,
                max_img=15,
                annot_min_per_group=0,
                only_word=None,
@@ -98,6 +99,7 @@ class Model(object):
     self.deprecated_word = deprecated_word
     self.stage_allowed = stage_allowed
     self.max_img = max_img
+    self.min_annot_num = min_annot_num
     self.annot_min_per_group = annot_min_per_group
     self.only_word = only_word
     self.num_preprocess_threads = num_preprocess_threads
@@ -183,25 +185,46 @@ class Model(object):
               idx = tmp_vocab.index(tmp_word)
               tmp_vocab_count[idx] += 1
 
+        # if less than self.tmp_dataset_0, deprecate
+        tmp_dataset_0 = []
+        for tmp in tmp_dataset:
+          urls = tmp['urls']
+          annot = tmp['annot']
+          gene_stage = tmp['gene stage']
+          annot_new = []
+          for tmp_label in annot:
+            tmp_idx = tmp_vocab.index(tmp_label)
+            if tmp_vocab_count[tmp_idx] >= self.min_annot_num:
+              annot_new.append(tmp_label)
+          if len(annot_new) < self.annot_min_per_group:
+            continue
+          tmp_dataset_0.append({'urls': urls,
+                            'annot': annot_new,
+                            'gene stage': gene_stage})
+        # print(tmp_dataset_0)
         # only the top k labels
         if not self.top_k_labels is None:
           max_arg = np.argsort(np.array(tmp_vocab_count))
-          top_k_labels_idx = max_arg[:self.top_k_labels]
-          allowed_word = tmp_vocab[top_k_labels_idx]
-
+          top_k_labels_idx = max_arg[-self.top_k_labels:]
+          # print(top_k_labels_idx.dtype)
+          tmp_vocab_ = np.array(tmp_vocab)
+          allowed_word = tmp_vocab_[top_k_labels_idx]
+          # print(allowed_word)
           tmp_dataset_1 = []
-          for ele in tmp_dataset:
+          for ele in tmp_dataset_0:
             label = ele['annot']
             for ele_word in label:
               tmp_label = []
               if ele_word in allowed_word:
                 tmp_label.append(ele_word)
+              # print(tmp_label)
             if len(tmp_label) > 0:
+              # print(tmp_label)
               tmp_dataset_1.append({'urls': ele['urls'],
                               'annot': tmp_label,
-                              'gene stage': ele['gene_stage']})
+                              'gene stage': ele['gene stage']})
         else:
-          tmp_dataset_1 = tmp_dataset
+          tmp_dataset_1 = tmp_dataset_0
 
         # Done filters input data
 
@@ -212,12 +235,18 @@ class Model(object):
             if tmp_word not in self.vocab:
               self.vocab.append(tmp_word)
 
+        # print(tmp_dataset_1)
+
         for ele in tmp_dataset_1:
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
           # print(urls_list)
           label = ele['annot']
+          #print(gene_stage)
+          #print(urls_list)
+          #print(label)
           img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
+          label_index = ops.annot2vec(label, self.vocab)
           if os.path.exists(img_file_name):
             self.raw_dataset.append({'filename': img_file_name,
                                    'label_index': label_index})
@@ -230,7 +259,6 @@ class Model(object):
           if isinstance(_image, int):
             continue
 
-          label_index = ops.annot2vec(label, self.vocab)
           skimage.io.imsave(img_file_name, _image)
           self.raw_dataset.append({'filename': img_file_name,
                                    'label_index': label_index})
@@ -309,6 +337,7 @@ class Model(object):
       self.targets = tf.placeholder(dtype=tf.float32,
                                   shape=[None, None],  # batch_size
                                   name="input_feed")
+
 
     else:
       raise ValueError('Wrong mode!')

@@ -2,6 +2,41 @@
 
 import tensorflow as tf
 
+import skimage.transform
+import numpy as np
+
+def np_image_random(image,
+                    rotate_angle=[-10, 10],
+                    rescale=[0.8, 1.2],
+                    whiten=False,
+                    normalize=True
+                    ):
+    """
+    image should be a ndarray, dtype float
+    """
+    o_shape = image.shape
+    if rotate_angle is not None:
+        rotate_angle = np.random.random() * (rotate_angle[1] - rotate_angle[0]) + rotate_angle[0]
+        image = skimage.transform.rotate(image, rotate_angle, mode='edge')
+    if rescale is not None:
+        rescale = np.random.random() * (rescale[1] - rescale[0]) + rescale[0]
+        image = skimage.transform.rescale(image, scale=rescale, mode='edge')
+
+    if whiten:
+        image -= np.mean(image, axis=0)
+        cov = np.dot(image.T, image) / image.shape[0]  # 计算协方差矩阵
+        U, S, V = np.linalg.svd(cov)  # 矩阵的奇异值分解
+        Xrot = np.dot(image, U)
+        image = Xrot / np.sqrt(S + 1e-5)  # 加上1e-5是为了防止出现分母为0的异常
+    if normalize:
+        image = image - np.mean(image, axis=0)
+        image = image / np.std(image)
+
+        # image = (image - image.min()) / (image.max() - image.min())
+
+    return image
+
+
 
 
 def distort_color(image, thread_id=0, scope=None):
