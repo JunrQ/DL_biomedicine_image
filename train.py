@@ -22,30 +22,25 @@ def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
 def main(initial_learning_rate=0.001,
-         optimizer=tf.train.AdamOptimizer(0.0001),
-         max_steps=99999999999999,
-         print_every_steps=500,
+         optimizer=tf.train.AdamOptimizer(1e-4),
+         max_steps=999999999999,
+         print_every_steps=666,
+         save_frequence=2000,
          num_pred=10,
          shuffle=True,
          batch_size=5,
          top_k_labels=20,
          min_annot_num=40,
          concatenate_input=False,
+         weight_decay=0.00004,
          predict_way='batch_max'
           ):
   """
-
-  :param initial_learning_rate:
-  :param optimizer:
-  :param max_steps:
-  :param print_every_steps:
-  :param num_pred:
-  :param shuffle:
-  :param batch_size:
-  :param concatenate_input: if True: batch_size concatenated images and corresponding labels are input
+  Args:
+    concatenate_input: if True: batch_size is used,  concatenated images and corresponding labels are input
                             if False: a group are a batch
+  Return:
 
-  :return:
   """
   g = tf.Graph()
   with g.as_default():
@@ -69,7 +64,8 @@ def main(initial_learning_rate=0.001,
                   concatenate_input=concatenate_input,
                   predict_way=predict_way,
                   min_annot_num=min_annot_num,
-                  top_k_labels=top_k_labels
+                  top_k_labels=top_k_labels,
+                  weight_decay=weight_decay
                   )
 
     model.build()
@@ -83,7 +79,7 @@ def main(initial_learning_rate=0.001,
           model.total_loss
           )
 
-      init = tf.initialize_all_variables()
+      init = tf.global_variables_initializer()
       saver_model = tf.train.Saver()
       if shuffle:
         np.random.shuffle(model.raw_dataset)
@@ -96,6 +92,8 @@ def main(initial_learning_rate=0.001,
         tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
+          if (x_step > 1) and (x_step % save_frequence == 0):
+            saver_model.save(sess, SAVE_PATH, global_step=x_step)
           # print(single_data)
           # read in images
           while True:
@@ -129,7 +127,8 @@ def main(initial_learning_rate=0.001,
                                             rotate_angle=[-20, 20],
                                             rescale=None,
                                             whiten=False,
-                                            normalize=True)
+                                            normalize=False)
+              # print(i_new[tmp])
             i = i_new
           # print(i.shape)
           # print(l.shape)
@@ -138,14 +137,25 @@ def main(initial_learning_rate=0.001,
           # assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
           # step = sess.run(model.global_step)
 
-          if (x_step > 1) and (x_step % print_every_steps == 0):
+          if (x_step > 0) and (x_step % print_every_steps == 0):
             sess.run(model.assing_is_training_false_op)
 
-            prob = sess.run([model.output,],
+            prob = sess.run([model.output,
+                             model.output_prob,
+                             model.targets,
+                             model.fc0,
+                             model.logits_neg,
+                             model.logits_pos,
+                             # model.fc1,
+                             model.total_loss,
+                             model.cross_entropy],
                             feed_dict={model.images: i,
                                        model.targets: l})
 
-            # print(prob)
+            print(prob[1].shape, prob[2].shape)
+            # print(i)
+            print(prob[1], '\n', prob[4], '\n', prob[5], '\n', prob[-1], prob[-2])
+            # print(prob[3])
             sess.run(model.assing_is_training_true_op)
 
             for single_batch in range(len(prob[0])):
@@ -171,6 +181,7 @@ def main(initial_learning_rate=0.001,
 
 if __name__ == '__main__':
     main()
+
 
 
 

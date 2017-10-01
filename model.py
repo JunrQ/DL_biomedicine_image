@@ -57,32 +57,27 @@ class Model(object):
                  with multi images in a group concatnate through cols. Just make it True.
                  Note:
                   **If you change the parameters, you should delete the RAW_DATASET_PATH file**
-      vgg_output_layer: output layer of vgg model
-      vgg_trainable:
       image_foramt: Used when saving concatenated images
       predict_way:
-          'fc': [not test]avgpool2d, if images are concatenate(concatenate_input=True), a group images for labels
+          'fc': avgpool2d, if images are concatenate(concatenate_input=True), a group images for labels
                 else(concatenate_input=False), a single image for labels
                 besides, after pool layer, there a self.adaption_fc_layers_num fc
-          TODO: 'cnn':
+          'cnn':
           'batch_max': if concatenate_input == False, then do max pooling in batch after in dim(1, 2)
                         else(concatenate_input == True), then do max pooling in dim(1, 2)
                         the lase layer is maxpooling layer
       image_concatnate_way: Original should be concatnate through columns
       tok_k_labels: if not None, e.g. 5, then top 5 labels are concerned
       concatenate_input: if True, input are concatenate, else, batch
-      deprecated_word: None or list of words
-      stage_allowed: [5, 6],
-      max_img: if a group of images exceed max_img, deprecate
-      min_annot_num: if total number of individual label in whole dataset labels is less than min_annot_num
-                      then, abandon
+      deprecated_word=None,
+      stage_allowed=[5, 6],
+      max_img=
       concatenate_input: if True, the input(a group: gene stage) for the model is concatenate,
                         and batch is composed of those concatenated images, so batch size can be
                         fixed to a number like 5.
                         if False, the input(a group: gene stage) for the model is treated as a batch
                         and batch is composed of those single images and same labels, so batch size is
                         not fixed, and depends on number of images in a gene stage group.
-      weight_decay: l2_regularizer
     """
     self.ckpt_path = ckpt_path
     self.mode = mode
@@ -294,6 +289,7 @@ class Model(object):
 
 
     if self.mode == "inference":
+      # TODO
       # In inference mode, images and inputs are fed via placeholders.
       image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
       input_feed = tf.placeholder(dtype=tf.int64,
@@ -337,11 +333,14 @@ class Model(object):
 
     elif self.mode == 'supervise':
       # In supervise mode, images and inputs are fed via placeholders.
-
+      # and after a certain number of steps, information will be printed
       self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
       self.targets = tf.placeholder(dtype=tf.float32,
                                   shape=[None, None],  # batch_size
                                   name="input_feed")
+
+      with tf.name_scope("images_input"):
+        tf.summary.image('input', self.images, 2)
 
 
     else:
@@ -382,22 +381,42 @@ class Model(object):
     elif self.predict_way == 'batch_max':
 
       with tf.variable_scope("adaption", values=[self.vgg_output]) as scope:
-        with slim.arg_scope(
-                [slim.conv2d, slim.fully_connected],
-                weights_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay)):
           # pool0
-          net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
+          # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
           # conv1
-          net = slim.conv2d(net, self.adaption_layer_filters[0], self.adaption_kernels_size[0], stride=(2, 2), scope='conv1')
-          # fc
-          net = slim.conv2d(net, 1024, [1, 1], scope='fc0')
-          # fc
-          net = slim.conv2d(net, self.classes_num, [1, 1], scope='fc1')
-          # max pooling pool1
-          shape = net.get_shape()
-          net = tf.reduce_max(net, axis=(1, 2), keep_dims=False)
+          net = tf.layers.conv2d(self.vgg_output, self.adaption_layer_filters[0],
+                          self.adaption_kernels_size[0], strides=(2, 2),
+                          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                          kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                          activation=tf.nn.relu,
+                          name='conv1')
 
-      self.adaption_output = net
+          net = tf.layers.dropout(net, training=self.is_training)
+          # conv2
+          net = tf.layers.conv2d(net, self.adaption_layer_filters[0],
+                                 [3, 3], strides=(1, 1),
+                                 kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                                 activation=tf.nn.relu,
+                                 name='conv2')
+
+          # net = tf.layers.dropout(net, training=self.is_training)
+          # fc
+          self.fc0 = tf.layers.conv2d(net, 1024, [1, 1],
+                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                  kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                  activation=tf.nn.relu,
+                  name='fc0')
+          # fc
+          self.fc1 = tf.layers.conv2d(self.fc0, self.classes_num, [1, 1],
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                  activation=None, name='fc1')
+          # max pooling pool1
+          # shape = net.get_shape()
+          self.fc_o = tf.reduce_max(self.fc1, axis=(1, 2), keep_dims=False)
+
+      self.adaption_output = self.fc_o
 
     else:
       raise ValueError('Wrong predict_way!')
@@ -446,12 +465,28 @@ class Model(object):
       pass
     elif self.predict_way == 'batch_max':
       logits = self.output
-      output_prob = tf.sigmoid(logits)
       labels = self.targets
-      cross_entropy = -tf.reduce_sum((1 - labels) * tf.log(1 - output_prob + 1e-10) + labels * tf.log(output_prob + 1e-10))
-      self.cross_entropy_loss = tf.reduce_mean(cross_entropy)
+      self.output_prob = tf.sigmoid(logits)
+
+      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.2),
+                                    tf.subtract(1., labels),
+                                    tf.zeros_like(labels))
+
+      self.logits_pos = tf.where(tf.less(self.output_prob, 0.95),
+                              labels,
+                              tf.zeros_like(labels))
+
+
+      '''
+      self.cross_entropy = -(tf.reduce_sum(tf.multiply((1 - labels), tf.log(1. - self.output_prob + 1e-10))) +
+                             tf.reduce_sum(tf.multiply(labels, tf.log(self.output_prob + 1e-10)))
+                              )
+      '''
+      self.cross_entropy = -(tf.reduce_sum(tf.multiply(self.logits_neg, tf.log(1. - self.output_prob + 1e-10))) +
+                             6.66 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
+                              )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-      self.total_loss = tf.add_n([self.cross_entropy_loss] + regularization_losses)
+      self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
 
     else:
       raise ValueError('Wrong predict_way!')
