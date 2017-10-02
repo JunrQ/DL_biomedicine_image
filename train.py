@@ -25,7 +25,7 @@ def main(initial_learning_rate=0.001,
          optimizer=tf.train.AdamOptimizer(1e-4),
          max_steps=999999999999,
          print_every_steps=666,
-         save_frequence=2000,
+         save_frequence=6666,
          num_pred=10,
          shuffle=True,
          batch_size=5,
@@ -173,7 +173,7 @@ def main(initial_learning_rate=0.001,
 
               for s in range(num_pred):
                 # print(pred_result)
-                prediction += (str(vocab[pred_result[s]]) + ' \n')
+                prediction += (str(vocab[pred_result[-(s+1)]]) + ' \n')
               print('Prediction: %s' % prediction)
 
           train_op.run(feed_dict={model.images: i,
