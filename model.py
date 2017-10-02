@@ -24,6 +24,7 @@ class Model(object):
 
   def __init__(self,
                ckpt_path,
+               model_ckpt_path=MODEL_CKPT_PATH,
                image_foramt='bmp',
                first_run=True,
                predict_way='fc',
@@ -80,6 +81,7 @@ class Model(object):
                         not fixed, and depends on number of images in a gene stage group.
     """
     self.ckpt_path = ckpt_path
+    self.model_ckpt_path = model_ckpt_path
     self.mode = mode
     self.height = height
     self.width = width
@@ -511,6 +513,17 @@ class Model(object):
                       self.ckpt_path)
       saver.restore(sess, self.ckpt_path)
     self.init_fn = restore_fn
+
+  def setup_model_initializer(self):
+    """
+    """
+    # Restore inception variables only
+    saver = tf.train.Saver(self.all_vars)
+    def restore_fn(sess):
+      tf.logging.info("Restoring vgg variables from checkpoint file %s",
+                      self.model_ckpt_path)
+      saver.restore(sess, self.model_ckpt_path)
+    self.model_init_fn = restore_fn
 
   def build(self):
     """Build total model.

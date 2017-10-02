@@ -88,7 +88,8 @@ def main(initial_learning_rate=0.001,
       with tf.Session() as sess:
         print("Number of classes: %d"%model.classes_num)
         sess.run(init)
-        model.init_fn(sess)
+        # model.init_fn(sess)
+        model.model_init_fn(sess)
         tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
