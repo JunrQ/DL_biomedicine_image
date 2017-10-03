@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 class DataManager(object):
     def __init__(self, image_manifest, annotation_manifest, separation_scheme):
         pass
