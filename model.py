@@ -50,7 +50,8 @@ class Model(object):
                num_preprocess_threads=4,
                batch_size=5,
                weight_decay=0.00004,
-               cnn_input_length=2048
+               cnn_input_length=2048,
+               valid_ratio=0.2
                ):
     """
     Args:
@@ -79,6 +80,8 @@ class Model(object):
                         if False, the input(a group: gene stage) for the model is treated as a batch
                         and batch is composed of those single images and same labels, so batch size is
                         not fixed, and depends on number of images in a gene stage group.
+
+      valid_ratio: divide the total into train, valid. #valid = #total dataset * valid_ratio
     """
     self.ckpt_path = ckpt_path
     self.model_ckpt_path = model_ckpt_path
@@ -111,6 +114,7 @@ class Model(object):
     self.assing_is_training_true_op = tf.assign(self.is_training, True)
     self.assing_is_training_false_op = tf.assign(self.is_training, False)
     self.cnn_input_length = cnn_input_length
+    self.valid_ratio = valid_ratio
 
   def load_data(self):
     """
@@ -129,6 +133,10 @@ class Model(object):
           self.vocab = pickle.load(f)
           self.raw_dataset = pickle.load(f)
           # print(self.raw_dataset)
+
+        with open(VALID_DATASET_PATH, 'rb') as f:
+          self.valid_dataset = pickle.load(f)
+          # print(self.raw_dataset)
       else:
         self.raw_dataset = []
         self.vocab = []
@@ -136,7 +144,6 @@ class Model(object):
         tmp_dataset = []
         tmp_vocab = []
         tmp_vocab_count = []
-        # TODO: fill in keys and **DATASET_ITERATOR**
         for ele in DATASET_ITERATOR:
           # print(ele)
           gene_stage = ele['gene stage']
@@ -264,10 +271,17 @@ class Model(object):
           skimage.io.imsave(img_file_name, _image)
           self.raw_dataset.append({'filename': img_file_name,
                                    'label_index': label_index})
+        np.random.shuffle(self.raw_dataset)
+        valid_num = int(len(self.raw_dataset) * self.valid_ratio)
+        self.valid_dataset = self.raw_dataset[:valid_num]
+        self.raw_dataset = self.raw_dataset[(valid_num + 1):]
         # save it
         with open(RAW_DATASET_PATH, 'wb') as f:
           pickle.dump(self.vocab, f, True)
           pickle.dump(self.raw_dataset, f, True)
+
+        with open(VALID_DATASET_PATH, 'wb') as f:
+          pickle.dump(self.valid_dataset, f, True)
 
 
   def build_inputs(self):
@@ -291,12 +305,12 @@ class Model(object):
 
 
     if self.mode == "inference":
-      # TODO
-      # In inference mode, images and inputs are fed via placeholders.
-      image_feed = tf.placeholder(dtype=tf.string, shape=[], name="image_feed")
-      input_feed = tf.placeholder(dtype=tf.int64,
-                                  shape=[None],  # batch_size
-                                  name="input_feed")
+        # In inference mode, images and inputs are fed via placeholders.
+        # and after a certain number of steps, information will be printed
+        self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
+        self.targets = tf.placeholder(dtype=tf.float32,
+                                      shape=[None, None],  # batch_size
+                                      name="input_feed")
 
 
     elif self.mode == 'train':
@@ -470,7 +484,7 @@ class Model(object):
       labels = self.targets
       self.output_prob = tf.sigmoid(logits)
 
-      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.2),
+      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.3),
                                     tf.subtract(1., labels),
                                     tf.zeros_like(labels))
 
@@ -485,7 +499,7 @@ class Model(object):
                               )
       '''
       self.cross_entropy = -(tf.reduce_sum(tf.multiply(self.logits_neg, tf.log(1. - self.output_prob + 1e-10))) +
-                             6.66 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
+                             66.6 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
                               )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)

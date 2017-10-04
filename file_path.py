@@ -4,6 +4,9 @@ PKL_PATH = r'E:\zcq\codes\pkl'
 # where to save dataset: self.raw_dataset, self.vocab, after load_data
 RAW_DATASET_PATH = r'E:\zcq\codes\pkl\raw_dataset.pkl'
 
+#
+VALID_DATASET_PATH = r'E:\zcq\codes\pkl\valid_dataset.pkl'
+
 # saved image parent path, parent_path + gene_stage + .format, give the image file path
 DATASET_PAR_PATH = PKL_PATH
 
