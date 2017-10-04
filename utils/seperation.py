@@ -21,13 +21,15 @@ class SeparationScheme(object):
         self.annotation_threshold = annotation_threshold
         self.image_threshold = image_threshold
 
-    def separate(self, image_table, annot_table, proportion, tolerance_margin=0.02):
+    def separate(self, image_table, annot_table, proportion, tolerance_margin=0.02, shuffle=False):
         """ Separate data set into train, validation and test set.
 
         Args:
             image_table: Pandas data frame of image set.
             annot_table: Pandas data frame of annotation set.
-            proportion (dict): e.g. {'train': 0.6, 'val': 0.1, 'test': 0.2}
+            proportion (dict): How to separate (e.g. {'train': 0.6, 'val': 0.1, 'test': 0.2}).
+            tolerance_margin: Relax sample upper bound to percentage + tolerance_margin.
+            shuffle: Add randomness.
 
         Return: A namedtuple with three fields: train, validation, and test.
 
@@ -38,6 +40,10 @@ class SeparationScheme(object):
             image_table, annot_table)
 
         merged_table = self.__merge_image_and_annot(image_table, annot_table)
+
+        if shuffle:
+            merged_table = merged_table.sample(frac=1)
+
         train_set, remain = self.__seperate_one_part(
             merged_table, proportion['train'], tolerance_margin)
         val_set, remain = self.__seperate_one_part(
