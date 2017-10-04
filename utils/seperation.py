@@ -31,12 +31,15 @@ class SeparationScheme(object):
             tolerance_margin: Relax sample upper bound to percentage + tolerance_margin.
             shuffle: Add randomness.
 
-        Return: A namedtuple with three fields: train, validation, and test.
+        Return: A tuple. This first is an object with three attributes: train, validation, and test.
+            The second field is the extracted vocabulary.
+        
+        TODO: Instead of counting group number, try to count image number.
 
         """
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
-        image_table, annot_table = self.__shrink_data_set(
+        image_table, annot_table, vocab = self.__shrink_data_set(
             image_table, annot_table)
 
         merged_table = self.__merge_image_and_annot(image_table, annot_table)
@@ -49,7 +52,7 @@ class SeparationScheme(object):
         val_set, remain = self.__seperate_one_part(
             remain, proportion['val'], tolerance_margin)
 
-        return DataSep(train=train_set, validation=val_set, test=remain)
+        return DataSep(train=train_set, validation=val_set, test=remain), vocab
 
     def __seperate_one_part(self, table, percentage, tolerance_margin):
         annot_stat_dict = self.__build_annot_statistic(table)
@@ -165,11 +168,12 @@ class SeparationScheme(object):
             .flat_map(lambda annots: annots) \
             .list()
         unrolled = pd.Series(unrolled)
-        vocab = set(unrolled.value_counts().nlargest(keep_number).index)
+        vocab = unrolled.value_counts().nlargest(keep_number).index.values
+
         return vocab
 
     def __drop_annot(self, annots, vocab):
-        return tuple(seq(annots).filter(lambda a: a in vocab).list())
+        return tuple(seq(annots).filter(lambda a: a in set(vocab)).list())
 
     def __shrink_data_set(self, image_table, annot_table):
         image_table, annot_table = self.__extract_stages(
@@ -189,4 +193,4 @@ class SeparationScheme(object):
         dropped_image = image_table.loc[dropped_annot.index.values]
 
 
-        return dropped_image, dropped_annot
+        return dropped_image, dropped_annot, vocab
