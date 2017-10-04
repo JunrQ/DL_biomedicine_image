@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-""" This module defines a class that separate data set fairly 
+""" This module defines a class that separate data set fairly
 for training and testing.
 """
 
