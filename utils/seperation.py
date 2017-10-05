@@ -7,6 +7,7 @@ from collections import namedtuple
 from functional import seq
 import pandas as pd
 
+
 class SeparationScheme(object):
     """ Separate data set into train, validation, and test set.
     """
@@ -21,7 +22,8 @@ class SeparationScheme(object):
         self.annotation_threshold = annotation_threshold
         self.image_threshold = image_threshold
 
-    def separate(self, image_table, annot_table, proportion, tolerance_margin=0.02, shuffle=False):
+    def separate(self, image_table, annot_table,
+                 proportion=None, tolerance_margin=0.02, shuffle=False):
         """ Separate data set into train, validation and test set.
 
         Args:
@@ -33,10 +35,13 @@ class SeparationScheme(object):
 
         Return: A tuple. This first is an object with three attributes: train, validation, and test.
             The second field is the extracted vocabulary.
-        
+
         TODO: Instead of counting group number, try to count image number.
 
         """
+        if proportion is None:
+            proportion = {'train': 0.7, 'val': 0.1, 'test': 0.2}
+
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
         image_table, annot_table, vocab = self.__shrink_data_set(
@@ -191,6 +196,5 @@ class SeparationScheme(object):
             lambda annots: len(annots) > 0)
         dropped_annot = annot_table[drop_empty_mask]
         dropped_image = image_table.loc[dropped_annot.index.values]
-
 
         return dropped_image, dropped_annot, vocab
