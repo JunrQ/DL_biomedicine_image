@@ -36,7 +36,8 @@ def main(initial_learning_rate=0.001,
          min_annot_num=40,
          concatenate_input=False,
          weight_decay=0.00004,
-         predict_way='batch_max'
+         predict_way='batch_max',
+         input_queue_length=40
           ):
   """
   Args:
@@ -88,6 +89,16 @@ def main(initial_learning_rate=0.001,
         np.random.shuffle(model.raw_dataset)
       dataset = itertools.cycle(iter(model.raw_dataset))
 
+      dataset_queue = []
+      for _ in range(input_queue_length):
+        dataset_queue.append(dataset.__next__())
+
+      def queue_atom(dataset_queue):
+        np.random.shuffle(dataset_queue)
+        data = dataset_queue.pop()
+        dataset_queue.append(dataset.__next__())
+        return data
+
       with tf.Session() as sess:
         print("Number of classes: %d"%model.classes_num)
         sess.run(init)
@@ -101,7 +112,7 @@ def main(initial_learning_rate=0.001,
           # print(single_data)
           # read in images
           while True:
-            single_data = dataset.__next__()
+            single_data = queue_atom(dataset_queue)
             i = ops.read_image_from_single_file(single_data['filename'])
             l = single_data['label_index']
             if not isinstance(i, int):
@@ -114,7 +125,7 @@ def main(initial_learning_rate=0.001,
             # for the fact shape might not be the same, this way might not work
             for tmp in range(batch_size - 1):
               while True:
-                single_data = dataset.__next__()
+                single_data = queue_atom(dataset_queue)
                 i0 = ops.read_image_from_single_file(single_data['filename'])
                 l0 = single_data['label_index']
                 if not isinstance(i0, int):
