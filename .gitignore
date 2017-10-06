@@ -4,3 +4,4 @@
 .ipynb_checkpoints
 __pycache__/
 **/test.ipynb
+data/pic_data
