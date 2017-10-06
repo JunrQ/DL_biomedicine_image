@@ -44,23 +44,23 @@ class SeparationScheme(object):
 
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
-        image_table, annot_table, vocab = self.__shrink_data_set(
+        image_table, annot_table, vocab = self._shrink_data_set(
             image_table, annot_table)
 
-        merged_table = self.__merge_image_and_annot(image_table, annot_table)
+        merged_table = self._merge_image_and_annot(image_table, annot_table)
 
         if shuffle:
             merged_table = merged_table.sample(frac=1)
 
-        train_set, remain = self.__seperate_one_part(
+        train_set, remain = self._seperate_one_part(
             merged_table, proportion['train'], tolerance_margin)
-        val_set, remain = self.__seperate_one_part(
+        val_set, remain = self._seperate_one_part(
             remain, proportion['val'], tolerance_margin)
 
         return DataSep(train=train_set, validation=val_set, test=remain), vocab
 
-    def __seperate_one_part(self, table, percentage, tolerance_margin):
-        annot_stat_dict = self.__build_annot_statistic(table)
+    def _seperate_one_part(self, table, percentage, tolerance_margin):
+        annot_stat_dict = self._build_annot_statistic(table)
         selected_group_indices = []
         selected_set = set()
 
@@ -82,7 +82,7 @@ class SeparationScheme(object):
                     annot_stat_dict[annot] = (covered_num + 1, total_num)
 
         # relax the percentage restriction to percentage + tolerance_margin
-        reversed_map = self.__reverse_annot_map(table)
+        reversed_map = self._reverse_annot_map(table)
         # repeat (fixed point algorithm)
         for _ in range(0, len(reversed_map)):
             for annot in reversed_map.keys():
@@ -119,10 +119,10 @@ class SeparationScheme(object):
         return table.loc[selected_group_indices, :], \
             table.loc[~table.index.isin(selected_group_indices)]
 
-    def __merge_image_and_annot(self, image_table, annot_table):
+    def _merge_image_and_annot(self, image_table, annot_table):
         return pd.concat([image_table, annot_table], axis=1)
 
-    def __reverse_annot_map(self, annot_table):
+    def _reverse_annot_map(self, annot_table):
         unrolled = seq(annot_table.annotation) \
             .flat_map(lambda annots: annots) \
             .list()
@@ -135,7 +135,7 @@ class SeparationScheme(object):
 
         return reverse_map
 
-    def __build_annot_statistic(self, annot_table):
+    def _build_annot_statistic(self, annot_table):
         unrolled = seq(annot_table.annotation) \
             .flat_map(lambda annots: annots) \
             .list()
@@ -145,7 +145,7 @@ class SeparationScheme(object):
             .dict()
         return statistic
 
-    def __extract_directions(self, image_table, annot_table, directions):
+    def _extract_directions(self, image_table, annot_table, directions):
         image_remain = image_table[image_table.direction.isin(directions)]
         grouped = image_remain.groupby(['gene', 'stage'])
         merged = grouped.image_url.agg(
@@ -156,7 +156,7 @@ class SeparationScheme(object):
 
         return merged, annot_remain
 
-    def __extract_stages(self, image_table, annot_table, stages):
+    def _extract_stages(self, image_table, annot_table, stages):
         # multiindex column can not be selected
         # we need to convert a multiindex column to a normal column first
         image_table = image_table.reset_index()
@@ -168,7 +168,7 @@ class SeparationScheme(object):
         return (image_remain.set_index(['gene', 'stage']),
                 annot_remain.set_index(['gene', 'stage']))
 
-    def __extract_vocabulary(self, annot_table, keep_number):
+    def _extract_vocabulary(self, annot_table, keep_number):
         unrolled = seq(annot_table.annotation) \
             .flat_map(lambda annots: annots) \
             .list()
@@ -177,20 +177,20 @@ class SeparationScheme(object):
 
         return vocab
 
-    def __drop_annot(self, annots, vocab):
+    def _drop_annot(self, annots, vocab):
         return tuple(seq(annots).filter(lambda a: a in set(vocab)).list())
 
-    def __shrink_data_set(self, image_table, annot_table):
-        image_table, annot_table = self.__extract_stages(
+    def _shrink_data_set(self, image_table, annot_table):
+        image_table, annot_table = self._extract_stages(
             image_table, annot_table, self.stages)
 
-        image_table, annot_table = self.__extract_directions(
+        image_table, annot_table = self._extract_directions(
             image_table, annot_table, self.directions)
 
-        vocab = self.__extract_vocabulary(
+        vocab = self._extract_vocabulary(
             annot_table, self.annotation_threshold)
         annot_table.annotation = annot_table.annotation.apply(
-            lambda annots: self.__drop_annot(annots, vocab))
+            lambda annots: self._drop_annot(annots, vocab))
 
         drop_empty_mask = annot_table.annotation.apply(
             lambda annots: len(annots) > 0)
