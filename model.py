@@ -488,7 +488,7 @@ class Model(object):
                                     tf.subtract(1., labels),
                                     tf.zeros_like(labels))
 
-      self.logits_pos = tf.where(tf.less(self.output_prob, 0.95),
+      self.logits_pos = tf.where(tf.less(self.output_prob, 0.9),
                               labels,
                               tf.zeros_like(labels))
 
@@ -548,6 +548,8 @@ class Model(object):
     self.build_output_layer()
     self.build_model()
     self.setup_finetune_model_initializer()
+    if self.model_ckpt_path:
+      self.setup_model_initializer()
     self.setup_global_step()
 
 

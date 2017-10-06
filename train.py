@@ -27,7 +27,7 @@ def sigmoid(x):
 def main(initial_learning_rate=0.001,
          optimizer=tf.train.AdamOptimizer(1e-4),
          max_steps=999999999999,
-         print_every_steps=666,
+         print_every_steps=66,
          save_frequence=2500,
          num_pred=10,
          shuffle=True,
@@ -102,13 +102,13 @@ def main(initial_learning_rate=0.001,
       with tf.Session() as sess:
         print("Number of classes: %d"%model.classes_num)
         sess.run(init)
-        model.init_fn(sess)
+        model.model_init_fn(sess)
         # model.model_init_fn(sess)
         # tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
           if (x_step > 1) and (x_step % save_frequence == 0):
-            saver_model.save(sess, SAVE_PATH, global_step=x_step+13332)
+            saver_model.save(sess, SAVE_PATH, global_step=x_step)
           # print(single_data)
           # read in images
           while True:
