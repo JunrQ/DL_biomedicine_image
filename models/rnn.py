@@ -46,14 +46,16 @@ class MemCell(tf.contrib.rnn.RNNCell):
                                       weights_regularizer=slim.regularizers.l2_regularizer(
                                           self.weight_decay),
                                       scope='fc_read')
-        logits = tf.reshape(logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
+        logits = tf.reshape(
+            logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
         mask = tf.sequence_mask(self.length, self._mem_size)
         effective_logits = logits * tf.cast(mask, logits.dtype)
         attention = tf.nn.softmax(effective_logits)
         expanded_attention = tf.tile(tf.reshape(attention, [-1, 1], name='reshape_attention'),
                                      [1, self._feature_size], name='expand_attention')
         weighted = expanded_attention * flatten_mem
-        weighted = tf.reshape(weighted, [-1, self._mem_size, self._feature_size])
+        weighted = tf.reshape(
+            weighted, [-1, self._mem_size, self._feature_size])
         read = tf.reduce_sum(weighted, axis=1, keep_dims=False)
         return read
 
@@ -83,13 +85,21 @@ class RNN(ModelDesc):
         image, length, label = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
-        feature = extract_feature(image, ctx.is_training, self.weight_decay)
-        rnn_cell = MemCell(feature, length, self.batch_size, self.weight_decay)
+        feature = extract_feature(image, ctx.is_training)
+
+        with slim.arg_scope(slim.conv2d,
+                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
+            conv = slim.conv2d(feature, 512, (3, 3), stride=2, scope='conv1')
+            conv = slim.conv2d(conv, 512, (3, 3), stride=1, scope='conv2')
+            conv = slim.conv2d(conv, 512, (3, 3), stride=1, scope='conv3')
+        avg = tf.reduce_mean(conv, [1, 2], keep_dims=False)
+
+        rnn_cell = MemCell(avg, length, self.batch_size, self.weight_decay)
         dummy_input = [tf.zeros([N, 1])] * self.read_time
         _, final_encoding = tf.nn.static_rnn(
             rnn_cell, dummy_input, dtype=tf.float32, scope='process')
         logits = slim.fully_connected(final_encoding, self.label_num, activation_fn=None,
-                                      weights_regularizer=slim.regularizers.l2_regularizer(
+                                      weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
         loss = tf.losses.sigmoid_cross_entropy(label, logits, scope='loss')
@@ -97,6 +107,7 @@ class RNN(ModelDesc):
         self.cost = loss
 
     def _get_optimizer(self):
-        lr = tf.get_variable('learning_rate', shape=(), dtype=tf.float32, trainable=False)
+        lr = tf.get_variable('learning_rate', shape=(),
+                             dtype=tf.float32, trainable=False)
         tf.summary.scalar('learning_rate-summary', lr)
         return tf.train.AdamOptimizer(learning_rate=lr)

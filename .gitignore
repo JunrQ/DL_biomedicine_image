@@ -2,7 +2,7 @@
 .pyc
 .DS_Store
 .ipynb_checkpoints
-__pycache__/
+__pycache__
 **/test.ipynb
 data/pic_data
 data/resnet_v2_101

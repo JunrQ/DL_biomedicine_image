@@ -19,7 +19,7 @@ def image_preprocess(image):
         return image
 
 
-def extract_feature(images, is_training, weight_decay):
+def extract_feature(images, is_training):
     normalized = image_preprocess(images)
     _, T, H, W, C = normalized.get_shape().as_list()
     merge_dim = tf.reshape(normalized, shape=[-1, H, W, C], name='flatten_timestep')
@@ -28,11 +28,5 @@ def extract_feature(images, is_training, weight_decay):
             with slim.arg_scope([slim.batch_norm], trainable=False):
                 _, end_points = resnet_v2_101(merge_dim, is_training=is_training)
                 
-    transfer = end_points['resnet_v2_101/block3']
-    conv = slim.conv2d(transfer, 1024, (3, 3), stride=2, 
-                       weights_regularizer=slim.regularizers.l2_regularizer(weight_decay),
-                       scope='custom_conv')
-    pool = tf.reduce_mean(conv, [1, 2], name='global_avg_pool', keep_dims=False)
-    _, F = pool.get_shape().as_list()
-    recover_dim = tf.reshape(pool, shape=[-1, T, F], name='recover_timestep')
-    return recover_dim
+    feature = end_points['resnet_v2_101/block3']
+    return feature
