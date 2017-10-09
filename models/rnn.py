@@ -85,16 +85,9 @@ class RNN(ModelDesc):
         image, length, label = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
-        feature = extract_feature(image, ctx.is_training)
+        feature = extract_feature(image, ctx.is_training, self.weight_decay)
 
-        with slim.arg_scope(slim.conv2d,
-                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
-            conv = slim.conv2d(feature, 512, (3, 3), stride=2, scope='conv1')
-            conv = slim.conv2d(conv, 512, (3, 3), stride=1, scope='conv2')
-            conv = slim.conv2d(conv, 512, (3, 3), stride=1, scope='conv3')
-        avg = tf.reduce_mean(conv, [1, 2], keep_dims=False)
-
-        rnn_cell = MemCell(avg, length, self.batch_size, self.weight_decay)
+        rnn_cell = MemCell(feature, length, self.batch_size, self.weight_decay)
         dummy_input = [tf.zeros([N, 1])] * self.read_time
         _, final_encoding = tf.nn.static_rnn(
             rnn_cell, dummy_input, dtype=tf.float32, scope='process')

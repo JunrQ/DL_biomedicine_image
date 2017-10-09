@@ -104,7 +104,7 @@ class DataManager(object):
 
     def _build_basic_stream(self, data_set):
         stream = UrlDataFlow(data_set)
-        # trim image sequence to max length
+        # trim image sequence to max length, also shuffle squence
         stream = MapDataComponent(stream,
                                   lambda urls: _cut_to_max_length(urls, _MAX_SEQ_LENGTH), 0)
         # add length info of image sequence into data points
@@ -132,10 +132,8 @@ def _load_image(url_list, img_dir):
 
 
 def _cut_to_max_length(url_list, max_len):
-    if len(url_list) > max_len:
-        return np.random.choice(url_list, max_len)
-    else:
-        return url_list
+    select_len = min(len(url_list), max_len)
+    return np.random.choice(url_list, select_len)
 
 
 def _pad_input(img_list, max_len):
