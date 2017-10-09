@@ -3,15 +3,17 @@
 
     This module transforms image urls and string tags into tensors.
 """
-from csv_loader import (load_annot_table, load_image_table)
+from .csv_loader import (load_annot_table, load_image_table)
 from functional import seq
 import numpy as np
 from pathlib import Path
 from scipy.misc import imread
-from seperation import SeparationScheme
+from skimage.transform import resize
+from .seperation import SeparationScheme
 from sklearn.preprocessing import MultiLabelBinarizer
 from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
                                  MapDataComponent, ThreadedMapData)
+
 
 # TODO: configuration interface
 
@@ -19,6 +21,7 @@ _IMAGE_DIR = str(Path.home()) + \
     "/Documents/flyexpress/DL_biomedicine_image/data/pic_data/"
 _MAX_SEQ_LENGTH = 10
 _BATCH_SIZE = 32
+_IMAGE_SIZE = (128, 320)
 
 
 class UrlDataFlow(DataFlow):
@@ -40,11 +43,6 @@ class UrlDataFlow(DataFlow):
         """ Required by base class DataFlow
         """
         return len(self.dataframe)
-
-    def reset_state(self):
-        """ Required by base class DataFlow
-        """
-        super(UrlDataFlow, self).reset_state()
 
 
 class DataManager(object):
@@ -101,7 +99,8 @@ class DataManager(object):
         return self.binarizer.inverse_transform(encoding)
 
     def _encode_label(self, labels):
-        return self.binarizer.fit_transform([labels])
+        encoding = self.binarizer.fit_transform([labels])
+        return np.squeeze(encoding)
 
     def _build_basic_stream(self, data_set):
         stream = UrlDataFlow(data_set)
@@ -113,7 +112,8 @@ class DataManager(object):
         # read image multithreadedly
         stream = ThreadedMapData(
             stream, nr_thread=10,
-            map_func=lambda dp: [_load_image(dp[0], _IMAGE_DIR), dp[1], dp[2]])
+            map_func=lambda dp: [_load_image(dp[0], _IMAGE_DIR), dp[1], dp[2]],
+            buffer_size=20)
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, _MAX_SEQ_LENGTH), 0)
@@ -126,7 +126,7 @@ def _load_image(url_list, img_dir):
     imgs = seq(url_list) \
         .map(lambda url: img_dir + url) \
         .map(imread) \
-        .map(lambda img: np.transpose(img, [2, 0, 1])) \
+        .map(lambda img: resize(img, _IMAGE_SIZE, mode='constant')) \
         .list()
     return imgs
 

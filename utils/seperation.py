@@ -14,9 +14,9 @@ class SeparationScheme(object):
 
     def __init__(self, stages=None, directions=None, annotation_threshold=40, image_threshold=10):
         if stages is None:
-            stages = [1, 2, 3, 4, 5, 6]
+            stages = [3, 4, 5, 6]
         if directions is None:
-            directions = ['dorsal', 'lateral', 'ventral']
+            directions = ['lateral']
         self.stages = stages
         self.directions = directions
         self.annotation_threshold = annotation_threshold
@@ -40,7 +40,7 @@ class SeparationScheme(object):
 
         """
         if proportion is None:
-            proportion = {'train': 0.7, 'val': 0.1, 'test': 0.2}
+            proportion = {'train': 0.7, 'val': 0.05, 'test': 0.25}
 
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 

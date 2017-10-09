@@ -5,3 +5,6 @@
 __pycache__/
 **/test.ipynb
 data/pic_data
+data/resnet_v2_101
+data/inception_resnet_v2
+train_log
