@@ -32,7 +32,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
                 gate_feature, self._feature_size, scope='fc_fg')
             input_gate = slim.fully_connected(
                 gate_feature, self._feature_size, scope='fc_ig')
-        new_state = tf.tanh(forget_gate * state + input_gate * read)
+        new_state = forget_gate * state + input_gate * read
         return (), new_state
 
     def _read_memory(self, state):
@@ -79,14 +79,13 @@ class RNN(ModelDesc):
     def _get_inputs(self):
         return [InputDesc(tf.float32, [None, 10, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
-                InputDesc(tf.int32, [None, 40], 'label')]
+                InputDesc(tf.int32, [None, 20], 'label')]
 
     def _build_graph(self, inputs):
         image, length, label = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature(image, ctx.is_training, self.weight_decay)
-
         rnn_cell = MemCell(feature, length, self.batch_size, self.weight_decay)
         dummy_input = [tf.zeros([N, 1])] * self.read_time
         _, final_encoding = tf.nn.static_rnn(
@@ -95,7 +94,9 @@ class RNN(ModelDesc):
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
-        loss = tf.losses.sigmoid_cross_entropy(label, logits, scope='loss')
+        logits = tf.identity(logits, name='logits_export')
+        loss = tf.losses.sigmoid_cross_entropy(label, logits, 
+                                               reduction=tf.losses.Reduction.MEAN, scope='loss')
         tf.summary.scalar('loss-summary', loss)
         self.cost = loss
 

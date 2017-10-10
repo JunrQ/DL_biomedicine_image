@@ -113,7 +113,7 @@ class DataManager(object):
         stream = ThreadedMapData(
             stream, nr_thread=10,
             map_func=lambda dp: [_load_image(dp[0], _IMAGE_DIR), dp[1], dp[2]],
-            buffer_size=20)
+            buffer_size=40)
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, _MAX_SEQ_LENGTH), 0)

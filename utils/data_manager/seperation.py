@@ -12,7 +12,7 @@ class SeparationScheme(object):
     """ Separate data set into train, validation, and test set.
     """
 
-    def __init__(self, stages=None, directions=None, annotation_threshold=40, image_threshold=10):
+    def __init__(self, stages=None, directions=None, annotation_threshold=20, image_threshold=10):
         if stages is None:
             stages = [3, 4, 5, 6]
         if directions is None:
@@ -40,7 +40,7 @@ class SeparationScheme(object):
 
         """
         if proportion is None:
-            proportion = {'train': 0.7, 'val': 0.05, 'test': 0.25}
+            proportion = {'train': 0.7, 'val': 0.1, 'test': 0.2}
 
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
