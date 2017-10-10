@@ -2,9 +2,9 @@
 PKL_PATH = r'E:\zcq\codes\pkl'
 
 # where to save dataset: self.raw_dataset, self.vocab, after load_data
-RAW_DATASET_PATH = r'E:\zcq\codes\pkl\raw_dataset.pkl'
+RAW_DATASET_PATH = r'E:\zcq\codes\weakcnn\theano\top-60-split\raw_dataset.pkl'
 
-VALID_DATASET_PATH = r'E:\zcq\codes\pkl\valid_dataset.pkl'
+VALID_DATASET_PATH = r'E:\zcq\codes\weakcnn\theano\top-60-split\valid_dataset.pkl'
 
 # saved image parent path, parent_path + gene_stage + .format, give the image file path
 DATASET_PAR_PATH = PKL_PATH
@@ -27,5 +27,6 @@ MODEL_CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\model.ckpt-13332'
 '''
 
 # it is TOP 60
-SAVE_PATH = r'E:\zcq\codes\weakcnn\theano\top60\model_top60.ckpt'
-MODEL_CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\top60\model_top40.ckpt-30832'
+SAVE_PATH = r'E:\zcq\codes\weakcnn\theano\top-60-split\model_top60.ckpt'
+MODEL_CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\top-60-split\model_top60.ckpt-5000'
+

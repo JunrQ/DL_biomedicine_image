@@ -27,17 +27,18 @@ def sigmoid(x):
 def main(initial_learning_rate=0.001,
          optimizer=tf.train.AdamOptimizer(1e-4),
          max_steps=999999999999,
-         print_every_steps=66,
+         print_every_steps=250,
          save_frequence=2500,
-         num_pred=10,
+         num_pred=5,
          shuffle=True,
          batch_size=5,
-         top_k_labels=60,
-         min_annot_num=40,
+         top_k_labels=10,
+         min_annot_num=150,
          concatenate_input=False,
-         weight_decay=0.00004,
+         weight_decay=0.000005,
          predict_way='batch_max',
-         input_queue_length=40
+         input_queue_length=80,
+         stage_allowed=[6]
           ):
   """
   Args:
@@ -69,7 +70,8 @@ def main(initial_learning_rate=0.001,
                   predict_way=predict_way,
                   min_annot_num=min_annot_num,
                   top_k_labels=top_k_labels,
-                  weight_decay=weight_decay
+                  weight_decay=weight_decay,
+                  stage_allowed=stage_allowed
                   )
 
     model.build()
@@ -101,12 +103,18 @@ def main(initial_learning_rate=0.001,
 
       with tf.Session() as sess:
         print("Number of classes: %d"%model.classes_num)
+        print("Vocab: ", model.vocab)
         sess.run(init)
-        model.model_init_fn(sess)
-        # model.model_init_fn(sess)
+        if model.model_ckpt_path:
+          model.model_init_fn(sess)
+        else:
+          model.init_fn(sess)
         # tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
+          if(x_step > 1) and (x_step % 200 == 0):
+            # take time
+            time.sleep(300)
           if (x_step > 1) and (x_step % save_frequence == 0):
             saver_model.save(sess, SAVE_PATH, global_step=x_step)
           # print(single_data)
@@ -139,7 +147,7 @@ def main(initial_learning_rate=0.001,
             i_new = np.zeros(i.shape, dtype='float32')
             for tmp in range(i.shape[0]):
               i_new[tmp] = image_processing.np_image_random(i[tmp],
-                                            rotate_angle=[-20, 20],
+                                            rotate_angle=[-10, 10],
                                             rescale=None,
                                             whiten=False,
                                             normalize=False)
@@ -167,10 +175,11 @@ def main(initial_learning_rate=0.001,
                             feed_dict={model.images: i,
                                        model.targets: l})
 
-            print(prob[1].shape, prob[2].shape)
+            # print(prob[1].shape, prob[2].shape)
             # print(i)
-            print(prob[1], '\n', prob[4], '\n', prob[5], '\n', prob[-1], prob[-2])
+            # print(prob[1], '\n', prob[4], '\n', prob[5], '\n', prob[-1], prob[-2])
             # print(prob[3])
+            print('loss: ', prob[-1], prob[-2])
             sess.run(model.assing_is_training_true_op)
 
             for single_batch in range(len(prob[0])):
@@ -184,12 +193,13 @@ def main(initial_learning_rate=0.001,
 
               for s in vocab[l[single_batch] == 1.]:
                 target += (s + ' \n')
-              print('Target: %s' % target)
+              print('Target: \n%s' % target)
 
               for s in range(num_pred):
                 # print(pred_result)
-                prediction += (str(vocab[pred_result[-(s+1)]]) + ' \n')
-              print('Prediction: %s' % prediction)
+                prediction += (str(vocab[pred_result[-(s+1)]]) + ': '
+                              + str(prob[1][single_batch][pred_result[-(s+1)]]) + '\n')
+              print('Prediction: \n%s' % prediction)
 
           train_op.run(feed_dict={model.images: i,
                                   model.targets: l})

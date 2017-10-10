@@ -44,14 +44,15 @@ class Model(object):
                deprecated_word=None,
                stage_allowed=[5, 6],
                min_annot_num=40,
-               max_img=15,
+               max_img=20,
                annot_min_per_group=0,
                only_word=None,
                num_preprocess_threads=4,
                batch_size=5,
                weight_decay=0.00004,
                cnn_input_length=2048,
-               valid_ratio=0.2
+               valid_ratio=0.2,
+               split_labels=False
                ):
     """
     Args:
@@ -82,6 +83,8 @@ class Model(object):
                         not fixed, and depends on number of images in a gene stage group.
 
       valid_ratio: divide the total into train, valid. #valid = #total dataset * valid_ratio
+
+      split_labels: if True, label is split.
     """
     self.ckpt_path = ckpt_path
     self.model_ckpt_path = model_ckpt_path
@@ -115,6 +118,7 @@ class Model(object):
     self.assing_is_training_false_op = tf.assign(self.is_training, False)
     self.cnn_input_length = cnn_input_length
     self.valid_ratio = valid_ratio
+    self.split_labels = split_labels
 
   def load_data(self):
     """
@@ -140,15 +144,19 @@ class Model(object):
       else:
         self.raw_dataset = []
         self.vocab = []
-
         tmp_dataset = []
-        tmp_vocab = []
-        tmp_vocab_count = []
         for ele in DATASET_ITERATOR:
           # print(ele)
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
           label = ele['labels']
+
+          if self.split_labels:
+            tmp_label = []
+            for tmp in label:
+              for tmp_ in tmp.split():
+                tmp_label.append(tmp_)
+            label = tmp_label
 
           # choose stage
           stage = int(gene_stage[-1])
@@ -185,39 +193,20 @@ class Model(object):
                             'annot': label,
                             'gene stage': gene_stage})
 
-          # count vocab
-          for tmp_word in label:
-            if not (tmp_word in tmp_vocab):
-              tmp_vocab.append(tmp_word)
-              tmp_vocab_count.append(0)
-            else:
-              idx = tmp_vocab.index(tmp_word)
-              tmp_vocab_count[idx] += 1
+        tmp_list = []
+        for ele in tmp_dataset:
+          label = ele['annot']
+          tmp_list += label
+        tmp_list = np.array(tmp_list)
+        tmp_vocab, tmp_vocab_count = np.unique(tmp_list, return_counts=True)
 
-        # if less than self.tmp_dataset_0, deprecate
-        tmp_dataset_0 = []
-        for tmp in tmp_dataset:
-          urls = tmp['urls']
-          annot = tmp['annot']
-          gene_stage = tmp['gene stage']
-          annot_new = []
-          for tmp_label in annot:
-            tmp_idx = tmp_vocab.index(tmp_label)
-            if tmp_vocab_count[tmp_idx] >= self.min_annot_num:
-              annot_new.append(tmp_label)
-          if len(annot_new) < self.annot_min_per_group:
-            continue
-          tmp_dataset_0.append({'urls': urls,
-                            'annot': annot_new,
-                            'gene stage': gene_stage})
-        # print(tmp_dataset_0)
         # only the top k labels
+        tmp_dataset_0 = tmp_dataset
         if not self.top_k_labels is None:
-          max_arg = np.argsort(np.array(tmp_vocab_count))
+          max_arg = np.argsort(tmp_vocab_count)
           top_k_labels_idx = max_arg[-self.top_k_labels:]
           # print(top_k_labels_idx.dtype)
-          tmp_vocab_ = np.array(tmp_vocab)
-          allowed_word = tmp_vocab_[top_k_labels_idx]
+          allowed_word = tmp_vocab[top_k_labels_idx]
           # print(allowed_word)
           tmp_dataset_1 = []
           for ele in tmp_dataset_0:
@@ -226,34 +215,50 @@ class Model(object):
               tmp_label = []
               if ele_word in allowed_word:
                 tmp_label.append(ele_word)
-              # print(tmp_label)
             if len(tmp_label) > 0:
-              # print(tmp_label)
               tmp_dataset_1.append({'urls': ele['urls'],
                               'annot': tmp_label,
                               'gene stage': ele['gene stage']})
+
+          #####################
+          # NOTE: May be WRONG!
+          # actual vocab may not be allowed_word
+          #####################
+          # self.vocab = list(allowed_word)
         else:
+          tmp_dataset_0 = []
+          tmp_vocab = list(tmp_vocab)
+          tmp_vocab_count = list(tmp_vocab_count)
+          for tmp in tmp_dataset:
+            urls = tmp['urls']
+            annot = tmp['annot']
+            gene_stage = tmp['gene stage']
+            annot_new = []
+            for tmp_label in annot:
+              tmp_idx = tmp_vocab.index(tmp_label)
+              if tmp_vocab_count[tmp_idx] >= self.min_annot_num:
+                annot_new.append(tmp_label)
+            if len(annot_new) < self.annot_min_per_group:
+              continue
+            tmp_dataset_0.append({'urls': urls,
+                              'annot': annot_new,
+                              'gene stage': gene_stage})
+
           tmp_dataset_1 = tmp_dataset_0
 
-        # Done filters input data
+          # Done filters input data
 
         # build self.vocab
+        tmp_list = []
         for ele in tmp_dataset_1:
-          label = ele['annot']
-          for tmp_word in label:
-            if tmp_word not in self.vocab:
-              self.vocab.append(tmp_word)
-
-        # print(tmp_dataset_1)
+          tmp_list += ele['annot']
+        tmp_list = np.array(tmp_list)
+        self.vocab = list(np.unique(tmp_list))
 
         for ele in tmp_dataset_1:
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
-          # print(urls_list)
           label = ele['annot']
-          #print(gene_stage)
-          #print(urls_list)
-          #print(label)
           img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
           label_index = ops.annot2vec(label, self.vocab)
           if os.path.exists(img_file_name):
@@ -484,11 +489,11 @@ class Model(object):
       labels = self.targets
       self.output_prob = tf.sigmoid(logits)
 
-      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.3),
+      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.2),
                                     tf.subtract(1., labels),
                                     tf.zeros_like(labels))
 
-      self.logits_pos = tf.where(tf.less(self.output_prob, 0.9),
+      self.logits_pos = tf.where(tf.less(self.output_prob, 0.8),
                               labels,
                               tf.zeros_like(labels))
 
@@ -499,7 +504,7 @@ class Model(object):
                               )
       '''
       self.cross_entropy = -(tf.reduce_sum(tf.multiply(self.logits_neg, tf.log(1. - self.output_prob + 1e-10))) +
-                             66.6 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
+                             6.6 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
                               )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
