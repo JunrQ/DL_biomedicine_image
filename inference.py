@@ -32,21 +32,28 @@ def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
 def main(initial_learning_rate=0.001,
-         optimizer=tf.train.AdamOptimizer(1e-4),
-         max_steps=999999999999,
-         print_every_steps=666,
-         save_frequence=6666,
-         num_pred=10,
-         shuffle=True,
-         batch_size=5,
-         top_k_labels=20,
-         min_annot_num=20,
-         concatenate_input=False,
-         weight_decay=0.00004,
-         predict_way='batch_max',
-         top_k_accuracy=3,
-         threshold=0.8,
-         calculusN=100
+          optimizer=tf.train.AdamOptimizer(1e-4),
+          max_steps=999999999999,
+          print_every_steps=500,
+          save_frequence=1000,
+          num_pred=5,
+          shuffle=True,
+          batch_size=5,
+          top_k_labels=10,
+          min_annot_num=150,
+          concatenate_input=False,
+          weight_decay=0.000005,
+          predict_way='batch_max',
+          input_queue_length=80,
+          stage_allowed=[6],
+          adaption_layer_filters=[4096, 4096],
+          adaption_kernels_size=[[5, 5], [3, 3]],
+          adaption_layer_strides=[(2, 2), (1, 1)],
+          adaption_fc_layers_num=1,
+          adaption_fc_filters=[1024],
+          top_k_accuracy=3,
+          threshold=0.8,
+          calculusN=100
           ):
   """
   Args:
@@ -79,7 +86,13 @@ def main(initial_learning_rate=0.001,
                   predict_way=predict_way,
                   min_annot_num=min_annot_num,
                   top_k_labels=top_k_labels,
-                  weight_decay=weight_decay
+                  weight_decay=weight_decay,
+                  stage_allowed=stage_allowed,
+                  adaption_layer_filters=adaption_layer_filters,
+                  adaption_kernels_size=adaption_kernels_size,
+                  adaption_layer_strides=adaption_layer_strides,
+                  adaption_fc_layers_num=adaption_fc_layers_num,
+                  adaption_fc_filters=adaption_fc_filters
                   )
 
     model.build()
@@ -94,6 +107,7 @@ def main(initial_learning_rate=0.001,
 
       data_num = 0
       data_total_num = len(model.valid_dataset)
+      # data_total_num = 5
 
       # accuracy = 0
       # total_sample = 0
@@ -102,11 +116,14 @@ def main(initial_learning_rate=0.001,
       y_score = [] # shape [n_samples, n_classes]
 
       with tf.Session() as sess:
+        print("Number of test dataset: %d"%len(model.valid_dataset))
         print("Number of classes: %d"%model.classes_num)
         sess.run(init)
         model.model_init_fn(sess)
 
         for x_step in range(max_steps + 1):
+          if data_num >= data_total_num:
+            break
           while True:
             if data_num >= data_total_num:
               break
@@ -181,15 +198,20 @@ def main(initial_learning_rate=0.001,
       y_score = np.array(y_score)
       f1_micro = 0.0
       f1_macro = 0.0
-      assert model.classes_num != y_true.shape[1]
+      # print(model.classes_num)
+      # print(y_true.shape)
+      # print(y_true)
+      # print(y_score)
 
-      average_precision = 0.0
-      average_precision = average_precision_score(y_true, y_score)
+      average_precision = average_precision_score(y_true[:, 0], y_score[:, 0])
+      print("Average precision: ", average_precision)
 
       # f1 score
       y_pred = np.where(y_score >= threshold, 1, 0)
       sk_f1_micro = f1_score(y_true, y_pred, average='micro')
       sk_f1_macro = f1_score(y_true, y_pred, average='macro')
+      print("sklearn f1 micro score: ", sk_f1_micro)
+      print("sklearn f1 macro score: ", sk_f1_macro)
 
       TP = np.multiply(y_true, y_pred)
       FP = np.multiply(1 - y_true, y_pred)
@@ -230,9 +252,8 @@ def main(initial_learning_rate=0.001,
       '''
 
       f1_macro /= model.classes_num
-
-      # AUC
-      sk_auc = roc_auc_score(y_true, y_score)
+      print("f1 micro score: ", f1_micro)
+      print("f1 macro score: ", f1_macro)
 
       TPR = []
       FPR = []
@@ -246,14 +267,23 @@ def main(initial_learning_rate=0.001,
         FPR.append(1.0 * np.sum(FP) / (np.sum(FP) + np.sum(TN)))
 
       auc_score = auc(FPR, TPR)
+      print("AUC score: ", auc_score)
 
       sk_coverage = coverage_error(y_true, y_score)
+      print("sklearn coverage score: ", sk_coverage)
       sk_ranking_loss = label_ranking_loss(y_true, y_score)
+      print("sklearn ranking loss: ", sk_ranking_loss)
 
 
       max_idx = np.argmax(y_score, axis=1)
+      max_list_idx = zip(range(len(max_idx)), max_idx)
+      max_list = []
+      for ele in max_list_idx:
+        # print(ele)
+        max_list.append(y_true[ele[0], ele[1]])
 
-      one_error = np.sum(np.where(y_true[zip(range(len(max_idx)), max_idx)]==1, 1, 0))
+      one_error = np.sum(max_list) / data_total_num
+      print("One error: ", one_error)
 
       result = {'f1 micro': f1_micro,
                 'f1 macro': f1_macro,
@@ -262,7 +292,7 @@ def main(initial_learning_rate=0.001,
                 'coverage': sk_coverage,
                 'ranking loss': sk_ranking_loss,
                 'one error': one_error,
-                'sk auc': sk_auc,
+               # 'sk auc': sk_auc,
                 'auc': auc_score}
 
       with open(SAVE_RESULT_PATH, 'wb') as f:

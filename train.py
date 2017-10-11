@@ -25,20 +25,28 @@ def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
 def main(initial_learning_rate=0.001,
-         optimizer=tf.train.AdamOptimizer(1e-4),
-         max_steps=999999999999,
-         print_every_steps=250,
-         save_frequence=2500,
-         num_pred=5,
-         shuffle=True,
-         batch_size=5,
-         top_k_labels=10,
-         min_annot_num=150,
-         concatenate_input=False,
-         weight_decay=0.000005,
-         predict_way='batch_max',
-         input_queue_length=80,
-         stage_allowed=[6]
+          optimizer=tf.train.AdamOptimizer(1e-4),
+          max_steps=999999999999,
+          print_every_steps=500,
+          save_frequence=1000,
+          num_pred=6,
+          shuffle=True,
+          batch_size=5,
+          top_k_labels=10,
+          min_annot_num=20,
+          concatenate_input=False,
+          weight_decay=0.000005,
+          predict_way='batch_max',
+          input_queue_length=80,
+          stage_allowed=[6],
+          adaption_layer_filters=[4096, 4096, 2048],
+          adaption_kernels_size=[[5, 5], [3, 3], [3, 3]],
+          adaption_layer_strides=[(2, 2), (1, 1), (1, 1)],
+          adaption_fc_layers_num=1,
+          adaption_fc_filters=[2048],
+          neg_threshold=0.2,
+          pos_threshold=0.9,
+          loss_ratio=10
           ):
   """
   Args:
@@ -65,13 +73,22 @@ def main(initial_learning_rate=0.001,
      channels=3
     """
     model = Model(ckpt_path=CKPT_PATH,
+                  model_ckpt_path=MODEL_CKPT_PATH,
                   mode='supervise',
                   concatenate_input=concatenate_input,
                   predict_way=predict_way,
                   min_annot_num=min_annot_num,
                   top_k_labels=top_k_labels,
                   weight_decay=weight_decay,
-                  stage_allowed=stage_allowed
+                  stage_allowed=stage_allowed,
+                  adaption_layer_filters=adaption_layer_filters,
+                  adaption_kernels_size=adaption_kernels_size,
+                  adaption_layer_strides=adaption_layer_strides,
+                  adaption_fc_layers_num=adaption_fc_layers_num,
+                  adaption_fc_filters=adaption_fc_filters,
+                  neg_threshold=neg_threshold,
+                  pos_threshold=pos_threshold,
+                  loss_ratio=loss_ratio
                   )
 
     model.build()
@@ -102,6 +119,8 @@ def main(initial_learning_rate=0.001,
         return data
 
       with tf.Session() as sess:
+        print("Number of dataset: %d"%len(model.raw_dataset))
+        print("Number of test dataset: %d"%len(model.valid_dataset))
         print("Number of classes: %d"%model.classes_num)
         print("Vocab: ", model.vocab)
         sess.run(init)
@@ -112,7 +131,7 @@ def main(initial_learning_rate=0.001,
         # tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
-          if(x_step > 1) and (x_step % 200 == 0):
+          if(x_step > 1) and (x_step % 150 == 0):
             # take time
             time.sleep(300)
           if (x_step > 1) and (x_step % save_frequence == 0):
@@ -166,7 +185,6 @@ def main(initial_learning_rate=0.001,
             prob = sess.run([model.output,
                              model.output_prob,
                              model.targets,
-                             model.fc0,
                              model.logits_neg,
                              model.logits_pos,
                              # model.fc1,

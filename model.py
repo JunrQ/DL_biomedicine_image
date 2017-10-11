@@ -33,8 +33,10 @@ class Model(object):
                vgg_trainable=False,
                vgg_output_layer='conv4/conv4_3',
                adaption_layer_filters=[4096, 4096],
-               adaption_kernels_size=[[5, 5], [1, 1]],
-               adaption_fc_layers_num=2,
+               adaption_kernels_size=[[5, 5], [3, 3]],
+               adaption_layer_strides=[(2, 2), (1, 1)],
+               adaption_fc_layers_num=1,
+               adaption_fc_filters=[1024],
                height=128,
                width=320,
                channels=3,
@@ -52,7 +54,10 @@ class Model(object):
                weight_decay=0.00004,
                cnn_input_length=2048,
                valid_ratio=0.2,
-               split_labels=False
+               split_labels=False,
+               neg_threshold=0.2,
+               pos_threshold=0.9,
+               loss_ratio=10
                ):
     """
     Args:
@@ -95,6 +100,7 @@ class Model(object):
     self.vgg_output_layer = vgg_output_layer
     self.adaption_layer_filters = adaption_layer_filters
     self.adaption_kernels_size = adaption_kernels_size
+    self.adaption_layer_strides = adaption_layer_strides
     self.adaption_fc_layers_num = adaption_fc_layers_num
     self.adaption_output_dim = adaption_output_dim
     self.vgg_trainable = vgg_trainable
@@ -119,6 +125,10 @@ class Model(object):
     self.cnn_input_length = cnn_input_length
     self.valid_ratio = valid_ratio
     self.split_labels = split_labels
+    self.adaption_fc_filters = adaption_fc_filters
+    self.neg_threshold = neg_threshold
+    self.pos_threshold = pos_threshold
+    self.loss_ratio = loss_ratio
 
   def load_data(self):
     """
@@ -144,7 +154,10 @@ class Model(object):
       else:
         self.raw_dataset = []
         self.vocab = []
+
         tmp_dataset = []
+        tmp_vocab = []
+        tmp_vocab_count = []
         for ele in DATASET_ITERATOR:
           # print(ele)
           gene_stage = ele['gene stage']
@@ -152,6 +165,7 @@ class Model(object):
           label = ele['labels']
 
           if self.split_labels:
+            raise ValueError("Model parameter split_labels should be False")
             tmp_label = []
             for tmp in label:
               for tmp_ in tmp.split():
@@ -200,6 +214,7 @@ class Model(object):
         tmp_list = np.array(tmp_list)
         tmp_vocab, tmp_vocab_count = np.unique(tmp_list, return_counts=True)
 
+        # print(tmp_dataset_0)
         # only the top k labels
         tmp_dataset_0 = tmp_dataset
         if not self.top_k_labels is None:
@@ -211,11 +226,13 @@ class Model(object):
           tmp_dataset_1 = []
           for ele in tmp_dataset_0:
             label = ele['annot']
+            tmp_label = []
             for ele_word in label:
-              tmp_label = []
               if ele_word in allowed_word:
                 tmp_label.append(ele_word)
+              # print(tmp_label)
             if len(tmp_label) > 0:
+              # print(tmp_label)
               tmp_dataset_1.append({'urls': ele['urls'],
                               'annot': tmp_label,
                               'gene stage': ele['gene stage']})
@@ -255,10 +272,16 @@ class Model(object):
         tmp_list = np.array(tmp_list)
         self.vocab = list(np.unique(tmp_list))
 
+        # print(tmp_dataset_1)
+
         for ele in tmp_dataset_1:
           gene_stage = ele['gene stage']
           urls_list = ele['urls']
+          # print(urls_list)
           label = ele['annot']
+          # print(gene_stage)
+          # print(urls_list)
+          # print(label)
           img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
           label_index = ops.annot2vec(label, self.vocab)
           if os.path.exists(img_file_name):
@@ -302,7 +325,7 @@ class Model(object):
     #             'jpeg': tf.image.decode_jpeg,
     #             'png': tf.image.decode_pbg
     #             }
-    # if self.image_foramt not in _decoder.keys:
+    # if self.image_foramt not in _decoder=.keys:
     #   decoder = tf.image.decode_image
     # else:
     #   decoder = _decoder[self.image_foramt]
@@ -363,7 +386,6 @@ class Model(object):
       with tf.name_scope("images_input"):
         tf.summary.image('input', self.images, 2)
 
-
     else:
       raise ValueError('Wrong mode!')
 
@@ -383,15 +405,8 @@ class Model(object):
                                        trainable=self.vgg_trainable,
                                        output_layer=self.vgg_output_layer,
                                        weight_decay=self.weight_decay)
-    if self.predict_way == 'fc':
-      self.adaption_output = adaption_layer(self.vgg_output,
-                                            is_training=self.is_training,
-                                            num_output=self.adaption_output_dim,
-                                            fc_layers_num=self.adaption_fc_layers_num,
-                                            weight_decay=self.weight_decay,
-                                            filters=self.adaption_layer_filters,
-                                            kernels_size=self.adaption_kernels_size)
-    elif self.predict_way == 'cnn':
+
+    if self.predict_way == 'cnn':
       self.adaption_output = adaption_layer(self.vgg_output,
                                             is_training=self.is_training,
                                             num_output=self.cnn_input_length,
@@ -400,39 +415,36 @@ class Model(object):
                                             filters=self.adaption_layer_filters,
                                             kernels_size=self.adaption_kernels_size)
     elif self.predict_way == 'batch_max':
-
-      with tf.variable_scope("adaption", values=[self.vgg_output]) as scope:
+      net = self.vgg_output
+      with tf.variable_scope("adaption", values=[net]) as scope:
           # pool0
           # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
           # conv1
-          net = tf.layers.conv2d(self.vgg_output, self.adaption_layer_filters[0],
-                          self.adaption_kernels_size[0], strides=(2, 2),
-                          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                          kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                          activation=tf.nn.relu,
-                          name='conv1')
+          for tmp_idx in range(len(self.adaption_layer_filters)):
+            net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
+                            self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                            kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                            activation=tf.nn.relu,
+                            name='conv' + str(tmp_idx + 1))
 
-          net = tf.layers.dropout(net, training=self.is_training)
-          # conv2
-          net = tf.layers.conv2d(net, self.adaption_layer_filters[0],
-                                 [3, 3], strides=(1, 1),
-                                 kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                                 kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                                 activation=tf.nn.relu,
-                                 name='conv2')
+            net = tf.layers.dropout(net, training=self.is_training)
 
-          # net = tf.layers.dropout(net, training=self.is_training)
+          if self.adaption_fc_layers_num:
+            if self.adaption_fc_layers_num != len(self.adaption_fc_filters):
+              raise ValueError("adaption_fc_layers_num should equal len()")
+            for tmp_idx in range(self.adaption_fc_layers_num):
+              net = tf.layers.conv2d(net, self.adaption_fc_filters[tmp_idx], [1, 1],
+                      kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                      kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                      activation=tf.nn.relu,
+                      name='fc' + str(tmp_idx + 1))
+              net = tf.layers.dropout(net, training=self.is_training)
           # fc
-          self.fc0 = tf.layers.conv2d(net, 1024, [1, 1],
-                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                  kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                  activation=tf.nn.relu,
-                  name='fc0')
-          # fc
-          self.fc1 = tf.layers.conv2d(self.fc0, self.classes_num, [1, 1],
+          self.fc1 = tf.layers.conv2d(net, self.classes_num, [1, 1],
             kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
                   kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                  activation=None, name='fc1')
+                  activation=None, name='fc_output')
           # max pooling pool1
           # shape = net.get_shape()
           self.fc_o = tf.reduce_max(self.fc1, axis=(1, 2), keep_dims=False)
@@ -489,11 +501,11 @@ class Model(object):
       labels = self.targets
       self.output_prob = tf.sigmoid(logits)
 
-      self.logits_neg = tf.where(tf.greater(self.output_prob, 0.2),
+      self.logits_neg = tf.where(tf.greater(self.output_prob, self.neg_threshold),
                                     tf.subtract(1., labels),
                                     tf.zeros_like(labels))
 
-      self.logits_pos = tf.where(tf.less(self.output_prob, 0.8),
+      self.logits_pos = tf.where(tf.less(self.output_prob, self.pos_threshold),
                               labels,
                               tf.zeros_like(labels))
 
@@ -504,7 +516,7 @@ class Model(object):
                               )
       '''
       self.cross_entropy = -(tf.reduce_sum(tf.multiply(self.logits_neg, tf.log(1. - self.output_prob + 1e-10))) +
-                             6.6 * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
+                             self.loss_ratio * tf.reduce_sum(tf.multiply(self.logits_pos, tf.log(self.output_prob + 1e-10)))
                               )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
