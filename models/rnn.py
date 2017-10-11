@@ -5,7 +5,7 @@ from tensorpack import (ModelDesc, InputDesc, get_current_tower_context)
 
 
 class MemCell(tf.contrib.rnn.RNNCell):
-    def __init__(self, mem, length, batch_size, weight_decay):
+    def __init__(self, mem, length, weight_decay):
         """
         Args:
             mem: Tensor of shape [N, T, F]
@@ -17,7 +17,6 @@ class MemCell(tf.contrib.rnn.RNNCell):
         assert T is not None and F is not None, "T and F is unknown"
         self._mem_size = T
         self._feature_size = F
-        self._batch_size = batch_size
         self.weight_decay = weight_decay
 
     def __call__(self, _inputs, state, scope=None):
@@ -69,12 +68,21 @@ class MemCell(tf.contrib.rnn.RNNCell):
 
 
 class RNN(ModelDesc):
-    def __init__(self, read_time, label_num, batch_size, weight_decay=5e-4):
+    def __init__(self, read_time, label_num, weight_decay=5e-4):
         self.weight_decay = weight_decay
         self.read_time = read_time
         self.label_num = label_num
-        self.batch_size = batch_size
         self.cost = None
+        
+    def _filter_all_negative(self, logits, label):
+        keep_mask = tf.reduce_any(tf.cast(label, tf.bool), axis=0) 
+        logits = tf.transpose(tf.boolean_mask(tf.transpose(logits), keep_mask, name='mask_logits'))
+        label = tf.transpose(tf.boolean_mask(tf.transpose(label), keep_mask, name='mask_label'))
+        return logits, label
+        
+    def _setup_metrics(self, logits, label):
+        # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
+        logits = tf.identity(logits, name='logits_export')
 
     def _get_inputs(self):
         return [InputDesc(tf.float32, [None, 10, 128, 320, 3], 'image'),
@@ -86,7 +94,7 @@ class RNN(ModelDesc):
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature(image, ctx.is_training, self.weight_decay)
-        rnn_cell = MemCell(feature, length, self.batch_size, self.weight_decay)
+        rnn_cell = MemCell(feature, length, self.weight_decay)
         dummy_input = [tf.zeros([N, 1])] * self.read_time
         _, final_encoding = tf.nn.static_rnn(
             rnn_cell, dummy_input, dtype=tf.float32, scope='process')
@@ -94,12 +102,14 @@ class RNN(ModelDesc):
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
-        logits = tf.identity(logits, name='logits_export')
+        self._setup_metrics(logits, label)
         loss = tf.losses.sigmoid_cross_entropy(label, logits, 
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
-        tf.summary.scalar('loss-summary', loss)
+        loss = tf.identity(loss, name='loss_export')
+        tf.summary.scalar('train-loss-summary', loss)
         self.cost = loss
-
+        
+        
     def _get_optimizer(self):
         lr = tf.get_variable('learning_rate', shape=(),
                              dtype=tf.float32, trainable=False)

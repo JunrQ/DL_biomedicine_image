@@ -23,7 +23,7 @@ class SeparationScheme(object):
         self.image_threshold = image_threshold
 
     def separate(self, image_table, annot_table,
-                 proportion=None, tolerance_margin=0.02, shuffle=False):
+                 proportion=None, tolerance_margin=0.02, shuffle=True):
         """ Separate data set into train, validation and test set.
 
         Args:

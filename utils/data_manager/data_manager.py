@@ -20,7 +20,6 @@ from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
 _IMAGE_DIR = str(Path.home()) + \
     "/Documents/flyexpress/DL_biomedicine_image/data/pic_data/"
 _MAX_SEQ_LENGTH = 10
-_BATCH_SIZE = 32
 _IMAGE_SIZE = (128, 320)
 
 
@@ -62,7 +61,7 @@ class DataManager(object):
         self.test_set = separated.test
         self.binarizer = MultiLabelBinarizer(classes=vocabulary)
 
-    def get_train_stream(self):
+    def get_train_stream(self, bs):
         """ Data stream for training.
 
             A stream is a generator of batches. 
@@ -70,10 +69,10 @@ class DataManager(object):
             don not need to tough it directly.
         """
         stream = self._build_basic_stream(self.train_set)
-        stream = BatchData(stream, batch_size=_BATCH_SIZE)
+        stream = BatchData(stream, batch_size=bs)
         return stream
 
-    def get_validation_stream(self):
+    def get_validation_stream(self, bs):
         """ Data stream for validation.
 
             The data is cached for frequent reuse.
@@ -81,14 +80,14 @@ class DataManager(object):
         stream = self._build_basic_stream(self.val_set)
         # validation set is small, so we cache it
         stream = CacheData(stream)
-        stream = BatchData(stream, batch_size=_BATCH_SIZE)
+        stream = BatchData(stream, batch_size=bs)
         return stream
 
-    def get_test_stream(self):
+    def get_test_stream(self, bs):
         """ Data stream for test.
         """
         stream = self._build_basic_stream(self.test_set)
-        stream = BatchData(stream, batch_size=_BATCH_SIZE)
+        stream = BatchData(stream, batch_size=bs)
         return stream
 
     def recover_label(self, encoding):
