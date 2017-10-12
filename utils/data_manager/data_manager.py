@@ -15,14 +15,6 @@ from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
                                  MapDataComponent, ThreadedMapData)
 
 
-# TODO: configuration interface
-
-_IMAGE_DIR = str(Path.home()) + \
-    "/Documents/flyexpress/DL_biomedicine_image/data/pic_data/"
-_MAX_SEQ_LENGTH = 10
-_IMAGE_SIZE = (128, 320)
-
-
 class UrlDataFlow(DataFlow):
     """ Entry point of data pipeline.
     """
@@ -48,18 +40,16 @@ class DataManager(object):
     """ Complete data pipeline.
     """
 
-    def __init__(self,
-                 image_manifest, annotation_manifest):
-        image_table = load_image_table(image_manifest)
-        annot_table = load_annot_table(annotation_manifest)
-        # TODO: Add configuration interface
-        sep_scheme = SeparationScheme()
-        # TODO: Add configuration interface
+    def __init__(self, config):
+        image_table = load_image_table(config.image_table_location)
+        annot_table = load_annot_table(config.annotation_table_location)
+        sep_scheme = SeparationScheme(config)
         separated, vocabulary = sep_scheme.separate(image_table, annot_table)
         self.train_set = separated.train
         self.val_set = separated.validation
         self.test_set = separated.test
         self.binarizer = MultiLabelBinarizer(classes=vocabulary)
+        self.config = config
 
     def get_train_stream(self, bs):
         """ Data stream for training.
@@ -105,27 +95,29 @@ class DataManager(object):
         stream = UrlDataFlow(data_set)
         # trim image sequence to max length, also shuffle squence
         stream = MapDataComponent(stream,
-                                  lambda urls: _cut_to_max_length(urls, _MAX_SEQ_LENGTH), 0)
+                                  lambda urls: _cut_to_max_length(urls, self.config.max_sequence_length), 0)
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
         # read image multithreadedly
         stream = ThreadedMapData(
             stream, nr_thread=10,
-            map_func=lambda dp: [_load_image(dp[0], _IMAGE_DIR), dp[1], dp[2]],
+            map_func=lambda dp: [_load_image(
+                dp[0], self.config.image_directory, self.config.image_size),
+                dp[1], dp[2]],
             buffer_size=40)
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
-                                  lambda imgs: _pad_input(imgs, _MAX_SEQ_LENGTH), 0)
+                                  lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         # one-hot encode labels
         stream = MapDataComponent(stream, self._encode_label, 2)
         return stream
 
 
-def _load_image(url_list, img_dir):
+def _load_image(url_list, img_dir, img_size):
     imgs = seq(url_list) \
         .map(lambda url: img_dir + url) \
         .map(imread) \
-        .map(lambda img: resize(img, _IMAGE_SIZE, mode='constant')) \
+        .map(lambda img: resize(img, img_size, mode='constant')) \
         .list()
     return imgs
 

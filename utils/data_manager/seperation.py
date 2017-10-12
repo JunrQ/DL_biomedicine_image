@@ -12,18 +12,15 @@ class SeparationScheme(object):
     """ Separate data set into train, validation, and test set.
     """
 
-    def __init__(self, stages=None, directions=None, annotation_threshold=20, image_threshold=10):
-        if stages is None:
-            stages = [3, 4, 5, 6]
-        if directions is None:
-            directions = ['lateral']
-        self.stages = stages
-        self.directions = directions
-        self.annotation_threshold = annotation_threshold
-        self.image_threshold = image_threshold
+    def __init__(self, config):
+        self.stages = config.stages
+        self.directions =config. directions
+        self.annotation_threshold = config.annotation_number
+        self.proportion = config.proportion
+        self.tolerance_margin = config.tolerance_margin
+        self.shuffle = config.shuffle_separation
 
-    def separate(self, image_table, annot_table,
-                 proportion=None, tolerance_margin=0.02, shuffle=True):
+    def separate(self, image_table, annot_table):
         """ Separate data set into train, validation and test set.
 
         Args:
@@ -39,8 +36,6 @@ class SeparationScheme(object):
         TODO: Instead of counting group number, try to count image number.
 
         """
-        if proportion is None:
-            proportion = {'train': 0.7, 'val': 0.1, 'test': 0.2}
 
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
@@ -49,13 +44,13 @@ class SeparationScheme(object):
 
         merged_table = self._merge_image_and_annot(image_table, annot_table)
 
-        if shuffle:
+        if self.shuffle:
             merged_table = merged_table.sample(frac=1)
 
         train_set, remain = self._seperate_one_part(
-            merged_table, proportion['train'], tolerance_margin)
+            merged_table, self.proportion['train'], self.tolerance_margin)
         val_set, remain = self._seperate_one_part(
-            remain, proportion['val'], tolerance_margin)
+            remain, self.proportion['val'], self.tolerance_margin)
 
         return DataSep(train=train_set, validation=val_set, test=remain), vocab
 
