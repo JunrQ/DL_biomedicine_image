@@ -105,7 +105,8 @@ class RNN(ModelDesc):
         """
         self.weight_decay = config.weight_decay
         self.read_time = config.read_time
-        self.label_num = config.label_num
+        self.label_num = config.annotation_number
+        self.use_glimpse = config.use_glimpse
         self.cost = None
 
     def _setup_metrics(self, logits, label):
@@ -131,19 +132,37 @@ class RNN(ModelDesc):
         # the content of input sequence for the lstm cell is irrelevant, but we need its length
         # information to induce read_time
         dummy_input = [tf.zeros([N, 1])] * self.read_time
+        initial_state = self._calcu_glimpse(feature, length) if self.use_glimpse else None
         _, final_encoding = tf.nn.static_rnn(
-            rnn_cell, dummy_input, dtype=tf.float32, scope='process')
+            rnn_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+        
         logits = slim.fully_connected(final_encoding, self.label_num, activation_fn=None,
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
         self._setup_metrics(logits, label)
+        
         loss = tf.losses.sigmoid_cross_entropy(label, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
         tf.summary.scalar('train-loss-summary', loss)
         self.cost = loss
+        
+    def _calcu_glimpse(self, feature, length):
+        """ Calculate initial state for recurrent layer. 
+        
+        The initial state is calculated as an average over all images.
+        
+        Args: 
+            feature: A tensor of shape [N, T, F].
+            length: A tensor of shape [N].
+            
+        Return:
+            glimpse: A tensor of shape [N, F].
+        """
+        sum = tf.reduce_sum(feature, axis=1, keep_dims=False, name='sum_sequence')
+        return sum / length
 
     def _get_optimizer(self):
         lr = tf.get_variable('learning_rate', shape=(),
