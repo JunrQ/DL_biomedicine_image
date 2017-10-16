@@ -43,14 +43,11 @@ class SeparationScheme(object):
             image_table, annot_table)
 
         merged_table = self._merge_image_and_annot(image_table, annot_table)
-
-        # we keep test set fixed
+        if self.shuffle:
+            merged_table = merged_table.sample(frac=1)
+        
         test_set, remain = self._seperate_one_part(
             merged_table, self.proportion['test'], self.tolerance_margin)
-        
-        if self.shuffle:
-            remain = remain.sample(frac=1)
-        
         # rebalance proportion
         train_proportion = self.proportion['train'] / (self.proportion['train'] + self.proportion['val'] )
         train_set, remain = self._seperate_one_part(

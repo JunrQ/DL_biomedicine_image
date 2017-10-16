@@ -164,7 +164,10 @@ class RNN(ModelDesc):
             glimpse: A tensor of shape [N, F].
         """
         sum = tf.reduce_sum(feature, axis=1, keep_dims=False, name='sum_sequence')
-        return sum / length
+        F = tf.shape(sum)[-1]
+        length = tf.cast(length, tf.float32, name='cast_length_to_float')
+        expand = tf.tile(tf.expand_dims(length, 1), [1, F])
+        return sum / expand
 
     def _get_optimizer(self):
         lr = tf.get_variable('learning_rate', shape=(),
