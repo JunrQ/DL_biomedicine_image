@@ -59,7 +59,6 @@ class DataManager(object):
             don not need to tough it directly.
         """
         stream = self._build_basic_stream(self.train_set)
-        stream = BatchData(stream, batch_size=bs)
         return stream
 
     def get_validation_stream(self, bs):
@@ -70,14 +69,12 @@ class DataManager(object):
         stream = self._build_basic_stream(self.val_set)
         # validation set is small, so we cache it
         stream = CacheData(stream)
-        stream = BatchData(stream, batch_size=bs)
         return stream
 
     def get_test_stream(self, bs):
         """ Data stream for test.
         """
         stream = self._build_basic_stream(self.test_set)
-        stream = BatchData(stream, batch_size=bs)
         return stream
 
     def recover_label(self, encoding):
@@ -105,11 +102,10 @@ class DataManager(object):
                 dp[0], self.config.image_directory, self.config.image_size),
                 dp[1], dp[2]],
             buffer_size=40)
-        # pad and stack images to Tensor(shape=[T, C, H, W])
-        stream = MapDataComponent(stream,
-                                  lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         # one-hot encode labels
         stream = MapDataComponent(stream, self._encode_label, 2)
+        stream = BatchData(stream, self.config.batch_size, use_list=True)
+        stream = MapData(stream, _pad_input)
         return stream
 
 
@@ -127,9 +123,19 @@ def _cut_to_max_length(url_list, max_len):
     return np.random.choice(url_list, select_len)
 
 
-def _pad_input(img_list, max_len):
-    additional = max_len - len(img_list)
-    tensor = np.stack(img_list, axis=0)
-    paddings = [[0, additional], [0, 0], [0, 0], [0, 0]]
-    padded = np.pad(tensor, paddings, mode='constant')
-    return padded
+def _pad_input(group_list):
+    def pad_one_group(group, max_len):
+        additional = max_len - len(group)
+        tensor = np.stack(group)
+        paddings = [[0, additional], [0, 0], [0, 0], [0, 0]]
+        return np.pad(tensor, paddings, mode='constant')
+
+    groups, lengths, labels = zip(*group_list)
+
+    max_len = seq(groups).map(len).max()
+    padded = seq(groups).map(lambda g: pad_one_group(g, max_len)).list()
+    group_array = np.stack(padded)
+    length_array = np.stack(lengths)
+    label_array = np.stack(labels)
+
+    return [group_array, length_array, label_array]

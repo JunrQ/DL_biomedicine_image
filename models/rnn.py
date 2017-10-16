@@ -15,7 +15,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
     """ LSTM cell with memory.
     """
 
-    def __init__(self, mem, length, weight_decay):
+    def __init__(self, mem, length, weight_decay, max_sequence_length):
         """
         Args:
             mem: Feature tensor of shape [N, T, F].
@@ -26,9 +26,9 @@ class MemCell(tf.contrib.rnn.RNNCell):
         """
         self.memory = mem
         self.length = length
-        _, T, F = mem.get_shape().as_list()
-        assert T is not None and F is not None, "T and F is unknown"
-        self._mem_size = T
+        _, _, F = mem.get_shape().as_list()
+
+        self._mem_size = max_sequence_length
         self._feature_size = F
         self.weight_decay = weight_decay
 
@@ -42,7 +42,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
         read = self._read_memory(state)
         gate_feature = tf.concat(
             [read, state], 1, name='concat_read_and_state')
-        regularizer = slim.regularizers.l2_regularizer(self.weight_decay)
+        regularizer = slim.l2_regularizer(self.weight_decay)
 
         with slim.arg_scope([slim.fully_connected], activation_fn=tf.sigmoid,
                             weights_regularizer=regularizer):
@@ -97,25 +97,22 @@ class RNN(ModelDesc):
     """
 
     def __init__(self, config):
-        """ 
+        """
         Args:
-            read_time: How many times should the lstm run. 
+            read_time: How many times should the lstm run.
             label_num: Number of classes.
             weight_decay: l2 regularizer parameter.
         """
         self.weight_decay = config.weight_decay
         self.read_time = config.read_time
         self.label_num = config.label_num
+        self.max_sequence_length = config.max_sequence_length
         self.cost = None
-
-    def _setup_metrics(self, logits, label):
-        # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
-        logits = tf.identity(logits, name='logits_export')
 
     def _get_inputs(self):
         """ Required by the base class.
         """
-        return [InputDesc(tf.float32, [None, 10, 128, 320, 3], 'image'),
+        return [InputDesc(tf.float32, [None, None, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
                 InputDesc(tf.int32, [None, 20], 'label')]
 
@@ -126,8 +123,10 @@ class RNN(ModelDesc):
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature(image, ctx.is_training, self.weight_decay)
+        feature = self._pad_to_max_len(feature, self.max_sequence_length)
 
-        rnn_cell = MemCell(feature, length, self.weight_decay)
+        rnn_cell = MemCell(feature, length, self.weight_decay,
+                           self.max_sequence_length)
         # the content of input sequence for the lstm cell is irrelevant, but we need its length
         # information to induce read_time
         dummy_input = [tf.zeros([N, 1])] * self.read_time
@@ -137,13 +136,28 @@ class RNN(ModelDesc):
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
-        self._setup_metrics(logits, label)
+        # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
+        logits = tf.identity(logits, name='logits_export')
         loss = tf.losses.sigmoid_cross_entropy(label, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
         tf.summary.scalar('train-loss-summary', loss)
         self.cost = loss
+
+    def _pad_to_max_len(self, feature, max_len):
+        """ Pad a image sequence to the length of the internal memory.
+
+        Args:
+            feature: Tensor of shape [N, T, F].
+            max_len: Size of internal memory.
+
+        Return:
+            Tensor of shape [N, T, F] where T equals max_len.
+        """
+        pad_len = max_len - tf.shape(feature)[1]
+        paddings = [[0, 0], [0, pad_len], [0, 0]]
+        return tf.pad(feature, paddings, name='zero_pad_input')
 
     def _get_optimizer(self):
         lr = tf.get_variable('learning_rate', shape=(),

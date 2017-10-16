@@ -27,7 +27,7 @@ def extract_feature(images, is_training, weight_decay):
 
     Args:
         images: Tensor of shape [N, T, H, W, C].
-        is_training: boolean tensor, indicate whether extractor acts in training mode 
+        is_training: boolean tensor, indicate whether extractor acts in training mode
             or inference mode.
         weight_decay: l2 regularization parameter.
 
@@ -38,7 +38,9 @@ def extract_feature(images, is_training, weight_decay):
     normalized = image_preprocess(images)
     # resnet requires that the input should be a three-dim tensor
     # so we need to merge N and T (batch and image suquence)
-    _, T, H, W, C = normalized.get_shape().as_list()
+    _, _, H, W, C = normalized.get_shape().as_list()
+    T = tf.shape(normalized)[1]
+
     merge_dim = tf.reshape(
         normalized, shape=[-1, H, W, C], name='flatten_timestep')
     with slim.arg_scope(resnet_arg_scope()):
@@ -48,16 +50,17 @@ def extract_feature(images, is_training, weight_decay):
                     merge_dim, is_training=is_training)
 
     # features from resnet
-    feature = end_points['resnet_v2_101/block3']
+    feat = end_points['resnet_v2_101/block3']
     # add new conv layers
     with slim.arg_scope(resnet_arg_scope(use_batch_norm=False)):
-        with slim.arg_scope([slim.batch_norm], is_training=is_training):
-            conv = slim.conv2d(feature, 512, (3, 3), stride=2, scope='conv1')
-            bn = slim.batch_norm(conv, scope='batch_norm1')
-            conv = slim.conv2d(bn, 512, (3, 3), stride=1, scope='conv2')
-            bn = slim.batch_norm(conv, scope='batch_norm2')
-            conv = slim.conv2d(bn, 512, (3, 3), stride=1, scope='conv3')
-            bn = slim.batch_norm(conv, scope='batch_norm3')
+        with slim.arg_scope([slim.conv2d], weights_regularizer=slim.l2_regularizer(weight_decay)):
+            with slim.arg_scope([slim.batch_norm], is_training=is_training):
+                conv = slim.conv2d(feat, 512, (3, 3), stride=2, scope='conv1')
+                bn = slim.batch_norm(conv, scope='batch_norm1')
+                conv = slim.conv2d(bn, 512, (3, 3), stride=1, scope='conv2')
+                bn = slim.batch_norm(conv, scope='batch_norm2')
+                conv = slim.conv2d(bn, 512, (3, 3), stride=1, scope='conv3')
+                bn = slim.batch_norm(conv, scope='batch_norm3')
     avg = tf.reduce_mean(bn, [1, 2], keep_dims=False)
     # recover dims N and T
     _, F = avg.get_shape().as_list()

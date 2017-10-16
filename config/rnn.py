@@ -1,22 +1,7 @@
 from collections import namedtuple
 
 
-class Config(namedtuple('Config', [
-        'image_directory',
-        'image_size',
-        'image_table_location',
-        'annotation_table_location',
-        'stages',
-        'directions',
-        'annotation_number',
-        'max_sequence_length',
-        'proportion',
-        'tolerance_margin',
-        'shuffle_separation',
-        'read_time',
-        'weight_decay',
-        'batch_size',
-])):
+class Config:
     pass
 
 
