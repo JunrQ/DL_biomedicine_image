@@ -9,6 +9,7 @@ from .image_utils import extract_feature
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorpack import (ModelDesc, InputDesc, get_current_tower_context)
+from tensorpack.tfutils.summary import add_moving_summary
 
 
 class MemCell(tf.contrib.rnn.RNNCell):
@@ -32,20 +33,20 @@ class MemCell(tf.contrib.rnn.RNNCell):
         self._feature_size = F
         self.weight_decay = weight_decay
 
-    def __call__(self, _inputs, state, scope=None):
+    def __call__(self, inputs, state, scope=None):
         """ Required by the base class. Move one time step.
 
         Args:
             _inputs: A Dummy inputs whose content is irrelevant. 
             state: Tensor of shape [F] (last state).
         """
+        N = tf.shape(inputs)[0]
         read = self._read_memory(state)
         gate_feature = tf.concat(
             [read, state], 1, name='concat_read_and_state')
-        regularizer = slim.l2_regularizer(self.weight_decay)
 
         with slim.arg_scope([slim.fully_connected], activation_fn=tf.sigmoid,
-                            weights_regularizer=regularizer):
+                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
             forget_gate = slim.fully_connected(
                 gate_feature, self._feature_size, scope='fc_fg')
             input_gate = slim.fully_connected(
@@ -107,6 +108,7 @@ class RNN(ModelDesc):
         self.read_time = config.read_time
         self.label_num = config.label_num
         self.max_sequence_length = config.max_sequence_length
+        self.use_glimpse = config.use_glimpse
         self.cost = None
 
     def _get_inputs(self):
@@ -114,7 +116,7 @@ class RNN(ModelDesc):
         """
         return [InputDesc(tf.float32, [None, None, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
-                InputDesc(tf.int32, [None, 20], 'label')]
+                InputDesc(tf.int32, [None, self.label_num], 'label')]
 
     def _build_graph(self, inputs):
         """ Required by the base class.
@@ -125,13 +127,16 @@ class RNN(ModelDesc):
         feature = extract_feature(image, ctx.is_training, self.weight_decay)
         feature = self._pad_to_max_len(feature, self.max_sequence_length)
 
-        rnn_cell = MemCell(feature, length, self.weight_decay,
-                           self.max_sequence_length)
-        # the content of input sequence for the lstm cell is irrelevant, but we need its length
-        # information to induce read_time
-        dummy_input = [tf.zeros([N, 1])] * self.read_time
-        _, final_encoding = tf.nn.static_rnn(
-            rnn_cell, dummy_input, dtype=tf.float32, scope='process')
+        with tf.variable_scope('rnn'):
+            rnn_cell = MemCell(feature, length, self.weight_decay)
+            # the content of input sequence for the lstm cell is irrelevant, but we need its length
+            # information to deduce read_time
+            dummy_input = [tf.zeros([N, 1])] * self.read_time
+            initial_state = self._calcu_glimpse(
+                feature, length) if self.use_glimpse else None
+            _, final_encoding = tf.nn.static_rnn(
+                rnn_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+
         logits = slim.fully_connected(final_encoding, self.label_num, activation_fn=None,
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
@@ -140,10 +145,29 @@ class RNN(ModelDesc):
         logits = tf.identity(logits, name='logits_export')
         loss = tf.losses.sigmoid_cross_entropy(label, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
+        add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
-        tf.summary.scalar('train-loss-summary', loss)
         self.cost = loss
+
+    def _calcu_glimpse(self, feature, length):
+        """ Calculate initial state for recurrent layer. 
+
+        The initial state is calculated as an average over all images.
+
+        Args: 
+            feature: A tensor of shape [N, T, F].
+            length: A tensor of shape [N].
+
+        Return:
+            glimpse: A tensor of shape [N, F].
+        """
+        sum = tf.reduce_sum(
+            feature, axis=1, keep_dims=False, name='sum_sequence')
+        F = tf.shape(sum)[-1]
+        length = tf.cast(length, tf.float32, name='cast_length_to_float')
+        expand = tf.tile(tf.expand_dims(length, 1), [1, F])
+        return sum / expand
 
     def _pad_to_max_len(self, feature, max_len):
         """ Pad a image sequence to the length of the internal memory.
