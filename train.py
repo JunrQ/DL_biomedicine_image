@@ -40,11 +40,11 @@ def main(initial_learning_rate=0.001,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[4096, 4096, 2048],
+          adaption_layer_filters=[2048, 2048, 1024],
           adaption_kernels_size=[[5, 5], [3, 3], [3, 3]],
           adaption_layer_strides=[(2, 2), (1, 1), (1, 1)],
           adaption_fc_layers_num=1,
-          adaption_fc_filters=[2048],
+          adaption_fc_filters=[1024],
           neg_threshold=0.4,
           pos_threshold=0.9,
           loss_ratio=1.0
@@ -135,9 +135,7 @@ def main(initial_learning_rate=0.001,
         # tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
-          if(x_step > 1) and (x_step % 200 == 0):
-            # take time
-            time.sleep(2400)
+
           if (x_step > 1) and (x_step % save_frequence == 0):
             saver_model.save(sess, SAVE_PATH, global_step=x_step)
 
