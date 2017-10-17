@@ -4,11 +4,9 @@
     This module transforms image urls and string tags into tensors.
 """
 from .csv_loader import (load_annot_table, load_image_table)
+import cv2
 from functional import seq
 import numpy as np
-from pathlib import Path
-from scipy.misc import imread
-from skimage.transform import resize
 from .seperation import SeparationScheme
 from sklearn.preprocessing import MultiLabelBinarizer
 from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
@@ -51,7 +49,7 @@ class DataManager(object):
         self.binarizer = MultiLabelBinarizer(classes=vocabulary)
         self.config = config
 
-    def get_train_stream(self, bs):
+    def get_train_stream(self):
         """ Data stream for training.
 
             A stream is a generator of batches. 
@@ -59,25 +57,22 @@ class DataManager(object):
             don not need to tough it directly.
         """
         stream = self._build_basic_stream(self.train_set)
-        stream = BatchData(stream, batch_size=bs)
         return stream
 
-    def get_validation_stream(self, bs):
+    def get_validation_stream(self):
         """ Data stream for validation.
 
             The data is cached for frequent reuse.
         """
         stream = self._build_basic_stream(self.val_set)
         # validation set is small, so we cache it
-        stream = CacheData(stream)
-        stream = BatchData(stream, batch_size=bs)
+        # stream = CacheData(stream)
         return stream
 
-    def get_test_stream(self, bs):
+    def get_test_stream(self):
         """ Data stream for test.
         """
         stream = self._build_basic_stream(self.test_set)
-        stream = BatchData(stream, batch_size=bs)
         return stream
 
     def recover_label(self, encoding):
@@ -99,25 +94,31 @@ class DataManager(object):
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
         # read image multithreadedly
+        """
         stream = ThreadedMapData(
-            stream, nr_thread=10,
+            stream, nr_thread=5,
             map_func=lambda dp: [_load_image(
                 dp[0], self.config.image_directory, self.config.image_size),
                 dp[1], dp[2]],
-            buffer_size=40)
+            buffer_size=100)
+        """
+        stream = MapDataComponent(stream, lambda urls: _load_image(
+            urls, self.config.image_directory, self.config.image_size), 0)
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         # one-hot encode labels
         stream = MapDataComponent(stream, self._encode_label, 2)
+        stream = BatchData(stream, batch_size=self.config.batch_size, remainder=True)
         return stream
 
 
 def _load_image(url_list, img_dir, img_size):
     imgs = seq(url_list) \
         .map(lambda url: img_dir + url) \
-        .map(imread) \
-        .map(lambda img: resize(img, img_size, mode='constant')) \
+        .map(lambda loc: cv2.imread(loc, cv2.IMREAD_COLOR)) \
+        .map(lambda img: cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) \
+        .map(lambda img: cv2.resize(img, img_size)) \
         .list()
     return imgs
 

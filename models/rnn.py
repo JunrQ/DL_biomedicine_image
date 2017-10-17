@@ -69,11 +69,14 @@ class MemCell(tf.contrib.rnn.RNNCell):
                                       weights_regularizer=slim.regularizers.l2_regularizer(
                                           self.weight_decay),
                                       scope='fc_read')
+        # [N, T]
         logits = tf.reshape(
             logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
+        exp_logits = tf.exp(logits, name='exp_logits')
         mask = tf.sequence_mask(self.length, self._mem_size)
-        effective_logits = logits * tf.cast(mask, logits.dtype)
-        attention = tf.nn.softmax(effective_logits)
+        effective_exp_logits = exp_logits * tf.cast(mask, logits.dtype)
+        divisor = tf.reduce_sum(effective_exp_logits, keep_dims=True, name='softmax_divisor')
+        attention = effective_exp_logits / divisor
         expanded_attention = tf.tile(tf.reshape(attention, [-1, 1], name='reshape_attention'),
                                      [1, self._feature_size], name='expand_attention')
         weighted = expanded_attention * flatten_mem
@@ -110,10 +113,6 @@ class RNN(ModelDesc):
         self.use_glimpse = config.use_glimpse
         self.cost = None
 
-    def _setup_metrics(self, logits, label):
-        # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
-        logits = tf.identity(logits, name='logits_export')
-
     def _get_inputs(self):
         """ Required by the base class.
         """
@@ -142,8 +141,8 @@ class RNN(ModelDesc):
                                       weights_regularizer=slim.l2_regularizer(
                                           self.weight_decay),
                                       scope='logits')
-        self._setup_metrics(logits, label)
-        
+        # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
+        logits = tf.identity(logits, name='logits_export')
         loss = tf.losses.sigmoid_cross_entropy(label, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         add_moving_summary(loss)

@@ -7,7 +7,7 @@ class Config():
 
 default = Config()
 default.image_directory = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/pic_data/"
-default.image_size = (128, 320)
+default.image_size = (320, 128)
 default.image_table_location = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/standard_images.csv"
 default.annotation_table_location = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/standard_annotations.csv"
 default.stages = [3, 4, 5, 6]
@@ -20,4 +20,4 @@ default.shuffle_separation = True
 default.use_glimpse = False
 default.read_time = 5
 default.weight_decay = 5e-4
-default.batch_size = 32
+default.batch_size = 64
