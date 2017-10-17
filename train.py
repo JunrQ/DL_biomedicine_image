@@ -122,7 +122,7 @@ def main(initial_learning_rate=0.001,
       config = tf.ConfigProto()
       config.gpu_options.per_process_gpu_memory_fraction = 0.3
 
-      with tf.Session() as sess:
+      with tf.Session(config=config) as sess:
         print("Number of dataset: %d"%len(model.raw_dataset))
         print("Number of test dataset: %d"%len(model.valid_dataset))
         print("Number of classes: %d"%model.classes_num)
