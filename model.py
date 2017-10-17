@@ -340,8 +340,8 @@ class Model(object):
                                   shape=[None, None],  # batch_size
                                   name="input_feed")
 
-      with tf.name_scope("images_input"):
-        tf.summary.image('input', self.images, 2)
+      # with tf.name_scope("images_input"):
+      #   tf.summary.image('input', self.images, 2)
 
     else:
       raise ValueError('Wrong mode!')
@@ -471,7 +471,7 @@ class Model(object):
                               )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
-      tf.summary.scalar('total_loss', self.total_loss)
+      # tf.summary.scalar('total_loss', self.total_loss)
 
     else:
       raise ValueError('Wrong predict_way!')

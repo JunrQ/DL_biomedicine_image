@@ -41,7 +41,7 @@ slim = tf.contrib.slim
 
 def vgg16_base_layer(images,
                     output_layer='conv4/conv4_3',
-                    trainable=True,
+                    trainable=False,
                     is_training=True,
                     weight_decay=0.00004,
                     stddev=0.1,
