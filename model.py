@@ -359,7 +359,7 @@ class Model(object):
     self.classes_num = len(self.vocab)
     with tf.device('/gpu:0'):
       self.vgg_output = vgg16_base_layer(self.images,
-                                       is_training=self.is_training,
+                                       is_training=self.vgg_trainable,
                                        trainable=self.vgg_trainable,
                                        output_layer=self.vgg_output_layer,
                                        weight_decay=self.weight_decay)

@@ -73,9 +73,9 @@ def vgg16_base_layer(images,
           output = end_points['vgg_16/' + output_layer]
 
   # Add summaries.
-  if add_summaries:
-    for v in end_points.values():
-      tf.contrib.layers.summaries.summarize_activation(v)
+  # if add_summaries:
+    # for v in end_points.values():
+      # tf.contrib.layers.summaries.summarize_activation(v)
 
   return output
 
