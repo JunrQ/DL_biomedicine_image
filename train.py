@@ -140,8 +140,7 @@ def main(initial_learning_rate=0.001,
             time.sleep(2400)
           if (x_step > 1) and (x_step % save_frequence == 0):
             saver_model.save(sess, SAVE_PATH, global_step=x_step)
-          # print(single_data)
-          # read in images
+
           while True:
             single_data = queue_atom(dataset_queue)
             i = ops.read_image_from_single_file(single_data['filename'])
@@ -180,12 +179,6 @@ def main(initial_learning_rate=0.001,
             if len(i) > 1:
               if shuffle:
                 np.random.shuffle(i)
-          # print(i.shape)
-          # print(l.shape)
-          # print(i)
-          # print(l)
-          # assert not np.isnan(loss_value), 'Model diverged with loss = NaN'
-          # step = sess.run(model.global_step)
 
           if (x_step > 0) and (x_step % print_every_steps == 0):
             sess.run(model.assing_is_training_false_op)
@@ -200,10 +193,6 @@ def main(initial_learning_rate=0.001,
                             feed_dict={model.images: i,
                                        model.targets: l})
 
-            # print(prob[1].shape, prob[2].shape)
-            # print(i)
-            # print(prob[1], '\n', prob[4], '\n', prob[5], '\n', prob[-1], prob[-2])
-            # print(prob[3])
             print('loss: ', prob[-1], prob[-2])
             sess.run(model.assing_is_training_true_op)
 
@@ -211,10 +200,6 @@ def main(initial_learning_rate=0.001,
               target = ''
               prediction = ''
               pred_result = np.argsort(prob[0][single_batch])
-              # print(prob[0].shape)
-              # print(l[single_batch] == 1)
-              # print(type(model.vocab))
-              # print(pred_result)
 
               for s in vocab[l[single_batch] == 1.]:
                 target += (s + ' \n')

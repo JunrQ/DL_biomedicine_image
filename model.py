@@ -520,6 +520,7 @@ class Model(object):
                               )
       regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
       self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
+      tf.scalar_summary('total_loss', self.total_loss)
 
     else:
       raise ValueError('Wrong predict_way!')
