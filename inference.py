@@ -37,7 +37,7 @@ def main(initial_learning_rate=0.001,
           print_every_steps=500,
           save_frequence=1000,
           num_pred=5,
-          shuffle=True,
+          shuffle=False,
           batch_size=5,
           top_k_labels=10,
           min_annot_num=150,
@@ -50,7 +50,7 @@ def main(initial_learning_rate=0.001,
           adaption_kernels_size=[[5, 5], [3, 3]],
           adaption_layer_strides=[(2, 2), (1, 1)],
           adaption_fc_layers_num=1,
-          adaption_fc_filters=[1024],
+          adaption_fc_filters=[2048],
           top_k_accuracy=3,
           threshold=0.8,
           calculusN=100
@@ -142,10 +142,11 @@ def main(initial_learning_rate=0.001,
             i_new = np.zeros(i.shape, dtype='float32')
             for tmp in range(i.shape[0]):
               i_new[tmp] = image_processing.np_image_random(i[tmp],
-                                            rotate_angle=[-20, 20],
+                                            rotate_angle=None,
                                             rescale=None,
                                             whiten=False,
-                                            normalize=False)
+                                            normalize=False,
+                                            hsv=False)
             i = i_new
 
           sess.run(model.assing_is_training_false_op)
@@ -153,7 +154,6 @@ def main(initial_learning_rate=0.001,
             prob = sess.run([model.output,
                              model.output_prob,
                              model.targets,
-                             model.fc0,
                              model.logits_neg,
                              model.logits_pos,
                              # model.fc1,
@@ -282,7 +282,7 @@ def main(initial_learning_rate=0.001,
         # print(ele)
         max_list.append(y_true[ele[0], ele[1]])
 
-      one_error = np.sum(max_list) / data_total_num
+      one_error = 1.0 - np.sum(max_list) / data_total_num
       print("One error: ", one_error)
 
       result = {'f1 micro': f1_micro,

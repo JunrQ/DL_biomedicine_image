@@ -28,25 +28,25 @@ def main(initial_learning_rate=0.001,
           optimizer=tf.train.AdamOptimizer(1e-4),
           max_steps=999999999999,
           print_every_steps=500,
-          save_frequence=1000,
+          save_frequence=2000,
           num_pred=6,
           shuffle=True,
           batch_size=5,
-          top_k_labels=10,
+          top_k_labels=30,
           min_annot_num=20,
           concatenate_input=False,
           weight_decay=0.000005,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[4096, 4096, 2048],
-          adaption_kernels_size=[[5, 5], [3, 3], [3, 3]],
-          adaption_layer_strides=[(2, 2), (1, 1), (1, 1)],
+          adaption_layer_filters=[4096, 4096],
+          adaption_kernels_size=[[5, 5], [3, 3]],
+          adaption_layer_strides=[(2, 2), (1, 1)],
           adaption_fc_layers_num=1,
           adaption_fc_filters=[2048],
-          neg_threshold=0.2,
+          neg_threshold=0.4,
           pos_threshold=0.9,
-          loss_ratio=10
+          loss_ratio=1.0
           ):
   """
   Args:
@@ -131,9 +131,9 @@ def main(initial_learning_rate=0.001,
         # tf.train.start_queue_runners(sess=sess)
 
         for x_step in range(max_steps + 1):
-          if(x_step > 1) and (x_step % 150 == 0):
+          if(x_step > 1) and (x_step % 200 == 0):
             # take time
-            time.sleep(300)
+            time.sleep(2400)
           if (x_step > 1) and (x_step % save_frequence == 0):
             saver_model.save(sess, SAVE_PATH, global_step=x_step)
           # print(single_data)
@@ -166,12 +166,16 @@ def main(initial_learning_rate=0.001,
             i_new = np.zeros(i.shape, dtype='float32')
             for tmp in range(i.shape[0]):
               i_new[tmp] = image_processing.np_image_random(i[tmp],
-                                            rotate_angle=[-10, 10],
+                                            rotate_angle=[-15, 15],
                                             rescale=None,
                                             whiten=False,
-                                            normalize=False)
+                                            normalize=False,
+                                            hsv=False)
               # print(i_new[tmp])
             i = i_new
+            if len(i) > 1:
+              if shuffle:
+                np.random.shuffle(i)
           # print(i.shape)
           # print(l.shape)
           # print(i)

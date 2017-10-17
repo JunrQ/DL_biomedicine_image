@@ -2,14 +2,15 @@
 
 import tensorflow as tf
 
-import skimage.transform
+import skimage.transform, skimage.color
 import numpy as np
 
 def np_image_random(image,
                     rotate_angle=[-10, 10],
                     rescale=[0.8, 1.2],
                     whiten=False,
-                    normalize=True
+                    normalize=True,
+                    hsv=True
                     ):
     """
     image should be a ndarray, dtype float
@@ -30,9 +31,12 @@ def np_image_random(image,
         image = Xrot / np.sqrt(S + 1e-5)  # 加上1e-5是为了防止出现分母为0的异常
     if normalize:
         image = image - np.mean(image, axis=0)
-        image = image / np.std(image)
+        image = image / np.std(image, axis=0)
 
-        # image = (image - image.min()) / (image.max() - image.min())
+        image = (image - np.min(image, axis=0)) / (np.max(image, axis=0) - np.min(image, axis=0))
+
+    if hsv:
+      image = skimage.color.rgb2hsv(image)
 
     return image
 
