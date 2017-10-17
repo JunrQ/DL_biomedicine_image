@@ -1,9 +1,12 @@
 import os
 
-# where to save .pkl, after concatnate images
-PKL_PATH = r'E:\zcq\codes\pkl'
+GRAND_PARENT_PATH = r'/home/litiange/prp_file'
 
-PARENT_PATH = r'E:\zcq\codes\weakcnn\theano\6-10'
+# where to save .pkl, after concatnate images
+# PKL_PATH = r'E:\zcq\codes\pkl'
+PKL_PATH = os.path.join(GRAND_PARENT_PATH, 'pkl')
+
+PARENT_PATH = os.path.join(GRAND_PARENT_PATH, 'model/6-30')
 
 # where to save dataset: self.raw_dataset, self.vocab, after load_data
 RAW_DATASET_PATH = os.path.join(PARENT_PATH, 'raw_dataset.pkl')
@@ -14,13 +17,13 @@ VALID_DATASET_PATH =  os.path.join(PARENT_PATH, 'valid_dataset.pkl')
 DATASET_PAR_PATH = PKL_PATH
 
 # csvfile path
-CSVFILE_PATH = r'E:\csvfile.csv'
+CSVFILE_PATH = os.path.join(GRAND_PARENT_PATH, 'csvfile.csv')
 
 # original image parent path
-IMAGE_PARENT_PATH = r'E:\pic_data'
+IMAGE_PARENT_PATH = '/home/litiange/pic_data'
 
 # tensorflow ckpt file, trained weight file
-CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\vgg_16.ckpt'
+CKPT_PATH = os.path.join(GRAND_PARENT_PATH, 'vgg_16.ckpt')
 
 # it is TOP 60
 SAVE_PATH = os.path.join(PARENT_PATH, 'model.ckpt')

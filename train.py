@@ -24,11 +24,12 @@ import math
 def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
+train_sample_num = 2216
 def main(initial_learning_rate=0.001,
           optimizer=tf.train.AdamOptimizer(1e-4),
-          max_steps=999999999999,
-          print_every_steps=500,
-          save_frequence=2000,
+          max_steps=train_sample_num * 20,
+          print_every_steps=1000,
+          save_frequence=train_sample_num * 2,
           num_pred=6,
           shuffle=True,
           batch_size=5,
@@ -39,11 +40,11 @@ def main(initial_learning_rate=0.001,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[4096, 4096],
-          adaption_kernels_size=[[5, 5], [3, 3]],
-          adaption_layer_strides=[(2, 2), (1, 1)],
-          adaption_fc_layers_num=1,
-          adaption_fc_filters=[2048],
+          adaption_layer_filters=[4096, 4096, 2048],
+          adaption_kernels_size=[[5, 5], [3, 3], [3, 3]],
+          adaption_layer_strides=[(2, 2), (1, 1), (1, 1)],
+          adaption_fc_layers_num=2,
+          adaption_fc_filters=[2048, 1024],
           neg_threshold=0.4,
           pos_threshold=0.9,
           loss_ratio=1.0
@@ -118,6 +119,9 @@ def main(initial_learning_rate=0.001,
         dataset_queue.append(dataset.__next__())
         return data
 
+      config = tf.ConfigProto()
+      config.gpu_options.per_process_gpu_memory_fraction = 0.3
+
       with tf.Session() as sess:
         print("Number of dataset: %d"%len(model.raw_dataset))
         print("Number of test dataset: %d"%len(model.valid_dataset))
@@ -191,7 +195,6 @@ def main(initial_learning_rate=0.001,
                              model.targets,
                              model.logits_neg,
                              model.logits_pos,
-                             # model.fc1,
                              model.total_loss,
                              model.cross_entropy],
                             feed_dict={model.images: i,
