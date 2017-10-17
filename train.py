@@ -120,7 +120,7 @@ def main(initial_learning_rate=0.001,
         return data
 
       config = tf.ConfigProto()
-      config.gpu_options.per_process_gpu_memory_fraction = 0.3
+      config.gpu_options.per_process_gpu_memory_fraction = 0.7
 
       with tf.Session(config=config) as sess:
         print("Number of dataset: %d"%len(model.raw_dataset))
