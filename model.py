@@ -332,50 +332,7 @@ class Model(object):
     decoder = tf.image.decode_image
 
 
-    if self.mode == "inference":
-        # In inference mode, images and inputs are fed via placeholders.
-        # and after a certain number of steps, information will be printed
-        self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
-        self.targets = tf.placeholder(dtype=tf.float32,
-                                      shape=[None, None],  # batch_size
-                                      name="input_feed")
-
-
-    elif self.mode == 'train':
-      # Train mode
-      data = self.raw_dataset
-      filenames = [d['filename'] for d in data]
-      label_indexes = [d['label_index'] for d in data]
-      filename, label_index = tf.train.slice_input_producer([filenames, label_indexes], shuffle=True)
-
-      images_and_labels = []
-      for thread_in in range(self.num_preprocess_threads):
-        encoded_image = tf.read_file(filename)
-
-        image = image_processing.read_image(encoded_image,
-                                decoder,
-                                self.concatenate_input,
-                                height=self.height,
-                                width=self.width,
-                                train=True,
-                                concatnate_way=self.image_concatnate_way)
-        if self.concatenate_input:
-          images_and_labels.append([image, label_index])
-
-          images, label_index_batch = tf.train.batch_join(
-            images_and_labels,
-            batch_size=self.batch_size,
-            capacity=2 * self.num_preprocess_threads * self.batch_size)
-        else:
-          images = image
-          batch_size = image.get_shape()[0]
-          label_index_batch = tf.reshape(tf.tile(label_index, batch_size), shape=[batch_size, -1])
-
-
-        self.images = images
-        self.targets =label_index_batch
-
-    elif self.mode == 'supervise':
+    if self.mode == 'supervise':
       # In supervise mode, images and inputs are fed via placeholders.
       # and after a certain number of steps, information will be printed
       self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
@@ -407,13 +364,7 @@ class Model(object):
                                        weight_decay=self.weight_decay)
 
     if self.predict_way == 'cnn':
-      self.adaption_output = adaption_layer(self.vgg_output,
-                                            is_training=self.is_training,
-                                            num_output=self.cnn_input_length,
-                                            fc_layers_num=0,
-                                            weight_decay=self.weight_decay,
-                                            filters=self.adaption_layer_filters,
-                                            kernels_size=self.adaption_kernels_size)
+      pass
     elif self.predict_way == 'batch_max':
       net = self.vgg_output
       with tf.variable_scope("adaption", values=[net]) as scope:
