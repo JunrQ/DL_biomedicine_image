@@ -115,7 +115,7 @@ def read_image_from_single_file(filename, dtype='float64', redownload=False, try
             continue
 
     if not flag:
-        print('[Error: %s do not exist!]' % filename)
+        # print('[Error: %s do not exist!]' % filename)
         return -1
     else:
         im = skimage.util.img_as_float(im).astype(dtype)
