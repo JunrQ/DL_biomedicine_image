@@ -357,7 +357,8 @@ class Model(object):
       self.adaption_output: shape(batch_size, adaption_output_dim)
     """
     self.classes_num = len(self.vocab)
-    self.vgg_output = vgg16_base_layer(self.images,
+    with tf.device('/gpu:0'):
+      self.vgg_output = vgg16_base_layer(self.images,
                                        is_training=self.is_training,
                                        trainable=self.vgg_trainable,
                                        output_layer=self.vgg_output_layer,
@@ -366,8 +367,10 @@ class Model(object):
     if self.predict_way == 'cnn':
       pass
     elif self.predict_way == 'batch_max':
-      net = self.vgg_output
-      with tf.variable_scope("adaption", values=[net]) as scope:
+
+      with tf.device('/gpu:1'):
+        net = self.vgg_output
+        with tf.variable_scope("adaption", values=[net]) as scope:
           # pool0
           # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
           # conv1
@@ -400,7 +403,7 @@ class Model(object):
           # shape = net.get_shape()
           self.fc_o = tf.reduce_max(self.fc1, axis=(1, 2), keep_dims=False)
 
-      self.adaption_output = self.fc_o
+        self.adaption_output = self.fc_o
 
     else:
       raise ValueError('Wrong predict_way!')
