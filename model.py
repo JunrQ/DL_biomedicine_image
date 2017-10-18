@@ -332,16 +332,28 @@ class Model(object):
     decoder = tf.image.decode_image
 
 
-    if self.mode == 'supervise':
+    if self.mode == 'supervise' and self.predict_way == 'batch_max':
       # In supervise mode, images and inputs are fed via placeholders.
       # and after a certain number of steps, information will be printed
       self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
       self.targets = tf.placeholder(dtype=tf.float32,
                                   shape=[None, None],  # batch_size
                                   name="input_feed")
+    if self.mode == 'inference':
+      # In supervise mode, images and inputs are fed via placeholders.
+      # and after a certain number of steps, information will be printed
+      self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
+      self.targets = tf.placeholder(dtype=tf.float32,
+                                    shape=[None, None],  # batch_size
+                                    name="input_feed")
 
       # with tf.name_scope("images_input"):
       #   tf.summary.image('input', self.images, 2)
+    elif self.predict_way == 'rnn':
+      self.images = tf.placeholder(dtype=tf.float32, shape=[None, self.height, self.width, self.channels], name="image_feed")
+      self.targets = tf.placeholder(dtype=tf.float32,
+                                    shape=[None, None],  # batch_size
+                                    name="input_feed")
 
     else:
       raise ValueError('Wrong mode!')
@@ -364,7 +376,7 @@ class Model(object):
                                        output_layer=self.vgg_output_layer,
                                        weight_decay=self.weight_decay)
 
-    if self.predict_way == 'cnn':
+    if self.predict_way == 'rnn':
       with tf.device('/gpu:1'):
         net = self.vgg_output
         with tf.variable_scope("adaption", values=[net]) as scope:
@@ -382,7 +394,8 @@ class Model(object):
             net = tf.layers.dropout(net, training=self.is_training)
 
         with tf.variable_scope("input", values=[net]) as scope:
-          input = net
+          net = tf.layers.flatten(net)
+          Wi = tf.Variable(tf.truncated_normal(shape=[net.get_shape[1]]))
 
 
     elif self.predict_way == 'batch_max':

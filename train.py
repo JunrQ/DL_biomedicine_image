@@ -40,13 +40,13 @@ def main(initial_learning_rate=0.001,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[512, 1024, 512],
-          adaption_kernels_size=[[3, 3], [3, 3], [3, 3]],
-          adaption_layer_strides=[(1, 1), (1, 1), (1, 1)],
+          adaption_layer_filters=[1024, 1024],
+          adaption_kernels_size=[[3, 3], [3, 3]],
+          adaption_layer_strides=[(1, 1), (1, 1)],
           adaption_fc_layers_num=2,
           adaption_fc_filters=[1024, 512],
-          neg_threshold=0.4,
-          pos_threshold=0.7,
+          neg_threshold=0.1,
+          pos_threshold=0.9,
           loss_ratio=5.0
           ):
   """
