@@ -27,9 +27,9 @@ def sigmoid(x):
 train_sample_num = 2216
 def main(initial_learning_rate=0.001,
           optimizer=tf.train.AdamOptimizer(1e-4),
-          max_steps=train_sample_num * 20,
-          print_every_steps=train_sample_num / 2,
-          save_frequence=train_sample_num * 2,
+          max_steps=train_sample_num * 40,
+          print_every_steps=train_sample_num * 2,
+          save_frequence=train_sample_num * 20,
           num_pred=6,
           shuffle=True,
           batch_size=5,
