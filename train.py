@@ -28,7 +28,7 @@ train_sample_num = 2216
 def main(initial_learning_rate=0.001,
           optimizer=tf.train.AdamOptimizer(1e-4),
           max_steps=train_sample_num * 20,
-          print_every_steps=1000,
+          print_every_steps=train_sample_num / 2,
           save_frequence=train_sample_num * 2,
           num_pred=6,
           shuffle=True,
@@ -40,14 +40,14 @@ def main(initial_learning_rate=0.001,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[2048, 2048, 1024],
-          adaption_kernels_size=[[5, 5], [3, 3], [3, 3]],
-          adaption_layer_strides=[(2, 2), (1, 1), (1, 1)],
-          adaption_fc_layers_num=1,
-          adaption_fc_filters=[1024],
+          adaption_layer_filters=[512, 1024, 512],
+          adaption_kernels_size=[[3, 3], [3, 3], [3, 3]],
+          adaption_layer_strides=[(1, 1), (1, 1), (1, 1)],
+          adaption_fc_layers_num=2,
+          adaption_fc_filters=[1024, 512],
           neg_threshold=0.4,
-          pos_threshold=0.9,
-          loss_ratio=1.0
+          pos_threshold=0.7,
+          loss_ratio=5.0
           ):
   """
   Args:
@@ -120,7 +120,7 @@ def main(initial_learning_rate=0.001,
         return data
 
       config = tf.ConfigProto()
-      config.gpu_options.gpu_options.allow_growth=True
+      config.gpu_options.allow_growth=True
 
       with tf.Session(config=config) as sess:
         print("Number of dataset: %d"%len(model.raw_dataset))

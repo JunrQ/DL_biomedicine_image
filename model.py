@@ -365,7 +365,26 @@ class Model(object):
                                        weight_decay=self.weight_decay)
 
     if self.predict_way == 'cnn':
-      pass
+      with tf.device('/gpu:1'):
+        net = self.vgg_output
+        with tf.variable_scope("adaption", values=[net]) as scope:
+          # pool0
+          # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
+          # conv1
+          for tmp_idx in range(len(self.adaption_layer_filters)):
+            net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
+                            self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
+                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                            kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                            activation=tf.nn.relu,
+                            name='conv' + str(tmp_idx + 1))
+
+            net = tf.layers.dropout(net, training=self.is_training)
+
+        with tf.variable_scope("input", values=[net]) as scope:
+          input = net
+
+
     elif self.predict_way == 'batch_max':
 
       with tf.device('/gpu:1'):
@@ -417,11 +436,7 @@ class Model(object):
     """
     Output layer
     """
-    if self.predict_way == 'fc':
-      self.output = tf.layers.conv2d(self.adaption_output, self.classes_num, [1, 1],
-                      kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                      name='fc_output')
-    elif self.predict_way == 'cnn':
+    if self.predict_way == 'cnn':
       pass
     elif self.predict_way == 'batch_max':
       if self.concatenate_input == True:
@@ -439,15 +454,7 @@ class Model(object):
     Build loss function
     """
     #
-    if self.predict_way == 'fc':
-      logits = self.output
-      labels = self.targets
-      cross_entropy = tf.nn.sigmoid_cross_entropy_with_logits(logits=logits, labels=labels)
-      self.cross_entropy_loss = tf.reduce_mean(cross_entropy)
-      regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
-      self.total_loss = tf.add_n([self.cross_entropy_loss] + regularization_losses)
-
-    elif self.predict_way == 'cnn':
+    if self.predict_way == 'cnn':
       # TODO
       pass
     elif self.predict_way == 'batch_max':
