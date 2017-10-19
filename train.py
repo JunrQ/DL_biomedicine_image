@@ -24,7 +24,7 @@ import math
 def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
-train_sample_num = 2216
+train_sample_num = 2287
 def main(initial_learning_rate=0.001,
           optimizer=tf.train.AdamOptimizer(1e-4),
           max_steps=train_sample_num * 40,
@@ -40,11 +40,11 @@ def main(initial_learning_rate=0.001,
           predict_way='batch_max',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[1024, 1024],
-          adaption_kernels_size=[[3, 3], [3, 3]],
-          adaption_layer_strides=[(1, 1), (1, 1)],
-          adaption_fc_layers_num=2,
-          adaption_fc_filters=[1024, 512],
+          adaption_layer_filters=[2048, 2048, 1024],
+          adaption_kernels_size=[[3, 3], [3, 3], [3, 3]],
+          adaption_layer_strides=[(1, 1), (1, 1), (1, 1)],
+          adaption_fc_layers_num=0,
+          adaption_fc_filters=[],
           neg_threshold=0.1,
           pos_threshold=0.9,
           loss_ratio=5.0
@@ -95,7 +95,52 @@ def main(initial_learning_rate=0.001,
     model.build()
     vocab = np.array(model.vocab)
 
-    if model.mode == 'supervise' and model.predict_way == 'batch_max':
+    if model.mode == 'train' and model.predict_way == 'batch_max':
+      train_op = optimizer.minimize(
+        model.total_loss
+      )
+      # summary_op = tf.merge_all_summaries()
+      init = tf.global_variables_initializer()
+      saver_model = tf.train.Saver()
+
+      config = tf.ConfigProto()
+      config.gpu_options.allow_growth = True
+
+      with tf.Session(config=config) as sess:
+        print("Number of dataset: %d"%len(model.raw_dataset))
+        print("Number of test dataset: %d"%len(model.valid_dataset))
+        print("Number of classes: %d"%model.classes_num)
+        print("Vocab: ", model.vocab)
+        sess.run(init)
+        if model.model_ckpt_path:
+          model.model_init_fn(sess)
+        else:
+          model.init_fn(sess)
+        tf.train.start_queue_runners(sess=sess)
+        for x in xrange(max_steps + 1):
+
+          start_time = time.time()
+
+          step = sess.run(model.global_step)
+          i = [train_op, model.total_loss]
+
+          o = sess.run(i)
+          loss_value = o[1]
+
+          duration = time.time() - start_time
+
+          if step % 500 == 0:
+            format_str = ('step %d, loss = %.2f ,%.3f sec/batch')
+            print(format_str % (step, loss_value, duration))
+
+
+          if (step > 1) and (step % save_frequence == 0):
+            saver_model.save(sess, SAVE_PATH, global_step=step)
+
+
+
+
+    elif model.mode == 'supervise' and model.predict_way == 'batch_max':
       # Set up the learning rate.
       learning_rate_decay_fn = None
 

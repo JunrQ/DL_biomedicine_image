@@ -25,10 +25,10 @@ def np_image_random(image,
 
     if whiten:
         image -= np.mean(image, axis=0)
-        cov = np.dot(image.T, image) / image.shape[0]  # 计算协方差矩阵
-        U, S, V = np.linalg.svd(cov)  # 矩阵的奇异值分解
+        cov = np.dot(image.T, image) / image.shape[0]
+        U, S, V = np.linalg.svd(cov)
         Xrot = np.dot(image, U)
-        image = Xrot / np.sqrt(S + 1e-5)  # 加上1e-5是为了防止出现分母为0的异常
+        image = Xrot / np.sqrt(S + 1e-5)
     if normalize:
         image = image - np.mean(image, axis=0)
         image = image / np.std(image, axis=0)

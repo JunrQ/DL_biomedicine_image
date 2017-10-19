@@ -332,23 +332,42 @@ class Model(object):
     decoder = tf.image.decode_image
 
 
-    if self.mode == 'supervise' and self.predict_way == 'batch_max':
-      # In supervise mode, images and inputs are fed via placeholders.
-      # and after a certain number of steps, information will be printed
-      self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
-      self.targets = tf.placeholder(dtype=tf.float32,
-                                  shape=[None, None],  # batch_size
-                                  name="input_feed")
-    if self.mode == 'inference':
+    if self.mode == 'supervise':
+      if self.predict_way == 'batch_max':
+        # In supervise mode, images and inputs are fed via placeholders.
+        # and after a certain number of steps, information will be printed
+        self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
+        self.targets = tf.placeholder(dtype=tf.float32,
+                                    shape=[None, None],  # batch_size
+                                    name="input_feed")
+    elif self.mode == 'inference':
       # In supervise mode, images and inputs are fed via placeholders.
       # and after a certain number of steps, information will be printed
       self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
       self.targets = tf.placeholder(dtype=tf.float32,
                                     shape=[None, None],  # batch_size
                                     name="input_feed")
+    elif self.mode == 'train':
+      image_path_list = [d['filename'] for d in self.raw_dataset]
+      label_index_list = [d['label_index'] for d in self.raw_dataset]
 
-      # with tf.name_scope("images_input"):
-      #   tf.summary.image('input', self.images, 2)
+      filename, label_index = tf.train.slice_input_producer([image_path_list, label_index_list], shuffle=True)
+      images_and_labels = []
+      for thread_id in range(self.num_preprocess_threads):
+        image_buffer = tf.read_file(filename)
+
+        image = tf.image.decode_bmp(image_buffer, channels=3)
+        image = tf.image.convert_image_dtype(image, dtype=tf.float32)
+        images_and_labels.append([image, label_index])
+      images, label_index_batch = tf.train.batch_join(
+          images_and_labels,
+          batch_size=1,
+          capacity=10 * self.num_preprocess_threads)
+
+      images = tf.cast(images, tf.float32)
+      self.images = tf.reshape(images, shape=[tf.shape(images)[0] / self.height, self.height, self.width, 3])
+      self.targets = label_index_batch
+
     elif self.predict_way == 'rnn':
       self.images = tf.placeholder(dtype=tf.float32, shape=[None, self.height, self.width, self.channels], name="image_feed")
       self.targets = tf.placeholder(dtype=tf.float32,
