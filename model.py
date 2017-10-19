@@ -24,6 +24,7 @@ class Model(object):
 
   def __init__(self,
                ckpt_path,
+               gpu=0,
                model_ckpt_path=MODEL_CKPT_PATH,
                image_foramt='bmp',
                first_run=True,
@@ -47,7 +48,7 @@ class Model(object):
                deprecated_word=None,
                stage_allowed=[5, 6],
                min_annot_num=40,
-               max_img=20,
+               max_img=15,
                annot_min_per_group=0,
                only_word=None,
                num_preprocess_threads=4,
@@ -131,6 +132,7 @@ class Model(object):
     self.pos_threshold = pos_threshold
     self.loss_ratio = loss_ratio
     self.rnn_state_dim = rnn_state_dim
+    self.gpu = gpu
 
   def load_data(self):
     """
@@ -331,14 +333,17 @@ class Model(object):
     #   decoder = tf.image.decode_image
     # else:
     #   decoder = _decoder[self.image_foramt]
-    decoder = tf.image.decode_image
-
 
     if self.mode == 'supervise':
       if self.predict_way == 'batch_max':
         # In supervise mode, images and inputs are fed via placeholders.
         # and after a certain number of steps, information will be printed
         self.images = tf.placeholder(dtype=tf.float32, shape=[None, None, None, self.channels], name="image_feed")
+        self.targets = tf.placeholder(dtype=tf.float32,
+                                    shape=[None, None],  # batch_size
+                                    name="input_feed")
+      elif self.predict_way == 'rnn':
+        self.images = tf.placeholder(dtype=tf.float32, shape=[self.max_img, self.height, self.width, self.channels], name="image_feed")
         self.targets = tf.placeholder(dtype=tf.float32,
                                     shape=[None, None],  # batch_size
                                     name="input_feed")
@@ -370,17 +375,13 @@ class Model(object):
       self.images = tf.reshape(images, shape=[tf.shape(images)[0] / self.height, self.height, self.width, 3])
       self.targets = label_index_batch
 
-    elif self.predict_way == 'rnn':
-      self.images = tf.placeholder(dtype=tf.float32, shape=[None, self.height, self.width, self.channels], name="image_feed")
-      self.targets = tf.placeholder(dtype=tf.float32,
-                                    shape=[None, None],  # batch_size
-                                    name="input_feed")
+
 
     else:
       raise ValueError('Wrong mode!')
 
 
-  def build_finetune_model(self):
+  def build_base_model(self):
     """
     VGG16 + adaption layers
     see image_embedding for details.
@@ -390,91 +391,120 @@ class Model(object):
       self.adaption_output: shape(batch_size, adaption_output_dim)
     """
     self.classes_num = len(self.vocab)
-    with tf.device('/gpu:0'):
-      self.vgg_output = vgg16_base_layer(self.images,
+    #with tf.device('/gpu:0'):
+    self.vgg_output = vgg16_base_layer(self.images,
                                        is_training=self.vgg_trainable,
                                        trainable=self.vgg_trainable,
                                        output_layer=self.vgg_output_layer,
                                        weight_decay=self.weight_decay)
 
+  def build_finetune_model(self):
     if self.predict_way == 'rnn':
-      with tf.device('/gpu:1'):
-        net = self.vgg_output
-        with tf.variable_scope("adaption", values=[net]) as scope:
-          # pool0
-          # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
-          # conv1
-          for tmp_idx in range(len(self.adaption_layer_filters)):
-            net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
-                            self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
-                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                            kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                            activation=tf.nn.relu,
-                            name='conv' + str(tmp_idx + 1))
+      #with tf.device('/gpu:1'):
+      net = tf.nn.max_pool(self.vgg_output, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
+      # print(net.get_shape())
+      with tf.variable_scope("adaption", values=[net]) as scope:
+        # pool0
+        # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
+        # conv1
+        for tmp_idx in range(len(self.adaption_layer_filters)):
+          net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
+                          self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
+                          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                          kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                          activation=tf.nn.relu,
+                          padding='same',
+                          name='conv' + str(tmp_idx + 1))
 
-            net = tf.layers.dropout(net, training=self.is_training)
+          net = tf.layers.dropout(net, training=self.is_training)
+      # print(net.get_shape())
+      net = tf.contrib.layers.flatten(net)
+      # print(net.get_shape())
+      _output_l = int(self.vgg_output_layer.split('/')[0][-1])
+      _area = self.height * self.width / ((2**(_output_l - 1 + 1))**2)
+      _area = int(_area) * self.adaption_layer_filters[-1]
+      self.memory_dim = _area
+      # print(_area)
+      # _area = tf.cast(net.get_shape()[-1], tf.int32)
 
-        net = tf.layers.flatten(net)
-        with tf.variable_scope("rnn", values=[net]) as scope:
-          W_input = tf.Variable(tf.truncated_normal(shape=[tf.shape(net)[1], tf.shape(net)[1] + self.rnn_state_dim]))
-          b_input = tf.Variable(tf.zeros(shape=[1, tf.shape(net)[1]]))
-          W_m = tf.Variable(tf.truncated_normal(shape=[self.rnn_state_dim, tf.shape(net)[1] + self.rnn_state_dim]))
-          b_m = tf.Variable(tf.zeros(shape=[1, self.rnn_state_dim]))
+      with tf.variable_scope("rnn", values=[net]) as scope:
+        W_input = tf.Variable(tf.truncated_normal(shape=[_area, _area + self.rnn_state_dim]))
+        b_input = tf.Variable(tf.zeros(shape=[_area, 1]))
+        W_s = tf.Variable(tf.truncated_normal(shape=[self.rnn_state_dim, _area + self.rnn_state_dim]))
+        b_s = tf.Variable(tf.zeros(shape=[self.rnn_state_dim, 1]))
 
-          # initial state
-          state = tf.reduce_mean(net, axis=(0, ))
-          state = tf.reshape(state, [tf.shape(state), 1])
-          for idx in net:
-            idx = tf.reshape(idx, [tf.shape(idx), 1])
-            current_input = tf.concat([state, idx], axis=0)
-            state = tf.multiply(tf.sigmoid(tf.matmul(W_m, current_input) + b_m), state) + \
-              tf.multiply(tf.sigmoid(tf.matmul(W_input, current_input) + b_input), idx)
+        W_m = tf.Variable(tf.truncated_normal(shape=[_area, _area + self.rnn_state_dim]))
 
-          self.cnn_output = tf.layers.conv2d(state, self.classes_num, [1, 1],
-            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                  activation=None, name='rnn_output')
+        # initial state
+        self.initial_state = tf.placeholder(tf.float32, [self.rnn_state_dim, 1])
+        self.initial_memory = tf.placeholder(tf.float32, [_area, 1])
+        state = self.initial_state
+        memory = self.initial_memory
+        input_series = tf.unstack(net)
+        for idx in range(len(input_series)):
+          input_ = tf.reshape(input_series[idx], [_area, 1])
+          current_input = tf.concat([state, input_], axis=0)
+
+          # print(current_input.get_shape())
+          state = tf.multiply(tf.tanh(tf.matmul(W_s, current_input) + b_s), state) + state
+
+          m_input = tf.concat([state, input_], axis=0)
+
+          input_to_rnn = tf.multiply(tf.sigmoid(tf.matmul(W_input, m_input) + b_input), input_)
+
+          memory = memory + input_to_rnn
+
+
+          # tf.matmul(Wi2s, input_to_rnn) + bi2s
+        memory = tf.divide(memory, self.max_img)
+        memory = tf.reshape(memory, [1, _area])
+        self.rnn_output = tf.layers.dense(memory,
+              units=self.classes_num,
+              activation=None,
+              kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+              kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+              name='rnn_output')
 
 
 
     elif self.predict_way == 'batch_max':
 
-      with tf.device('/gpu:1'):
-        net = self.vgg_output
-        with tf.variable_scope("adaption", values=[net]) as scope:
-          # pool0
-          # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
-          # conv1
-          for tmp_idx in range(len(self.adaption_layer_filters)):
-            net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
-                            self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
-                            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                            kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                            activation=tf.nn.relu,
-                            name='conv' + str(tmp_idx + 1))
+      # with tf.device('/gpu:1'):
+      net = self.vgg_output
+      with tf.variable_scope("adaption", values=[net]) as scope:
+        # pool0
+        # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
+        # conv1
+        for tmp_idx in range(len(self.adaption_layer_filters)):
+          net = tf.layers.conv2d(net, self.adaption_layer_filters[tmp_idx],
+                          self.adaption_kernels_size[tmp_idx], self.adaption_layer_strides[tmp_idx],
+                          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                          kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                          activation=tf.nn.relu,
+                          name='conv' + str(tmp_idx + 1))
 
+          net = tf.layers.dropout(net, training=self.is_training)
+
+        if self.adaption_fc_layers_num:
+          if self.adaption_fc_layers_num != len(self.adaption_fc_filters):
+            raise ValueError("adaption_fc_layers_num should equal len()")
+          for tmp_idx in range(self.adaption_fc_layers_num):
+            net = tf.layers.conv2d(net, self.adaption_fc_filters[tmp_idx], [1, 1],
+                    kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                    kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                    activation=tf.nn.relu,
+                    name='fc' + str(tmp_idx + 1))
             net = tf.layers.dropout(net, training=self.is_training)
+        # fc
+        self.fc1 = tf.layers.conv2d(net, self.classes_num, [1, 1],
+          kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                activation=None, name='fc_output')
+        # max pooling pool1
+        # shape = net.get_shape()
+        self.fc_o = tf.reduce_max(self.fc1, axis=(1, 2), keep_dims=False)
 
-          if self.adaption_fc_layers_num:
-            if self.adaption_fc_layers_num != len(self.adaption_fc_filters):
-              raise ValueError("adaption_fc_layers_num should equal len()")
-            for tmp_idx in range(self.adaption_fc_layers_num):
-              net = tf.layers.conv2d(net, self.adaption_fc_filters[tmp_idx], [1, 1],
-                      kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                      kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                      activation=tf.nn.relu,
-                      name='fc' + str(tmp_idx + 1))
-              net = tf.layers.dropout(net, training=self.is_training)
-          # fc
-          self.fc1 = tf.layers.conv2d(net, self.classes_num, [1, 1],
-            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
-                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
-                  activation=None, name='fc_output')
-          # max pooling pool1
-          # shape = net.get_shape()
-          self.fc_o = tf.reduce_max(self.fc1, axis=(1, 2), keep_dims=False)
-
-        self.adaption_output = self.fc_o
+      self.adaption_output = self.fc_o
 
     else:
       raise ValueError('Wrong predict_way!')
@@ -488,8 +518,8 @@ class Model(object):
     """
     Output layer
     """
-    if self.predict_way == 'cnn':
-      self.output = self.cnn_output
+    if self.predict_way == 'rnn':
+      self.output = self.rnn_output
     elif self.predict_way == 'batch_max':
       if self.concatenate_input == True:
         self.output = self.adaption_output
@@ -506,9 +536,13 @@ class Model(object):
     Build loss function
     """
     #
-    if self.predict_way == 'cnn':
-      # TODO
-      pass
+    if self.predict_way == 'rnn':
+      self.cross_entropy = -(tf.reduce_sum(tf.multiply((1 - self.targets), tf.log(1. - self.output_prob + 1e-10))) +
+                             self.loss_ratio * tf.reduce_sum(
+                               tf.multiply(self.targets, tf.log(self.output_prob + 1e-10)))
+                             )
+      regularization_losses = tf.get_collection(tf.GraphKeys.REGULARIZATION_LOSSES)
+      self.total_loss = tf.add_n([self.cross_entropy] + regularization_losses)
     elif self.predict_way == 'batch_max':
       logits = self.output
       labels = self.targets
@@ -575,7 +609,14 @@ class Model(object):
     """
     self.load_data()
     self.build_inputs()
-    self.build_finetune_model()
+    if self.gpu:
+      with tf.device('/gpu:0'):
+        self.build_base_model()
+      with tf.device('/gpu:1'):
+        self.build_finetune_model()
+    else:
+      self.build_base_model()
+      self.build_finetune_model()
     self.build_output_layer()
     self.build_model()
     self.setup_finetune_model_initializer()
