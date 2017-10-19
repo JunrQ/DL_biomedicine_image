@@ -37,6 +37,7 @@ class Model(object):
                adaption_layer_strides=[(2, 2), (1, 1)],
                adaption_fc_layers_num=1,
                adaption_fc_filters=[1024],
+               rnn_state_dim=256,
                height=128,
                width=320,
                channels=3,
@@ -129,6 +130,7 @@ class Model(object):
     self.neg_threshold = neg_threshold
     self.pos_threshold = pos_threshold
     self.loss_ratio = loss_ratio
+    self.rnn_state_dim = rnn_state_dim
 
   def load_data(self):
     """
@@ -412,9 +414,27 @@ class Model(object):
 
             net = tf.layers.dropout(net, training=self.is_training)
 
-        with tf.variable_scope("input", values=[net]) as scope:
-          net = tf.layers.flatten(net)
-          Wi = tf.Variable(tf.truncated_normal(shape=[net.get_shape[1]]))
+        net = tf.layers.flatten(net)
+        with tf.variable_scope("rnn", values=[net]) as scope:
+          W_input = tf.Variable(tf.truncated_normal(shape=[tf.shape(net)[1], tf.shape(net)[1] + self.rnn_state_dim]))
+          b_input = tf.Variable(tf.zeros(shape=[1, tf.shape(net)[1]]))
+          W_m = tf.Variable(tf.truncated_normal(shape=[self.rnn_state_dim, tf.shape(net)[1] + self.rnn_state_dim]))
+          b_m = tf.Variable(tf.zeros(shape=[1, self.rnn_state_dim]))
+
+          # initial state
+          state = tf.reduce_mean(net, axis=(0, ))
+          state = tf.reshape(state, [tf.shape(state), 1])
+          for idx in net:
+            idx = tf.reshape(idx, [tf.shape(idx), 1])
+            current_input = tf.concat([state, idx], axis=0)
+            state = tf.multiply(tf.sigmoid(tf.matmul(W_m, current_input) + b_m), state) + \
+              tf.multiply(tf.sigmoid(tf.matmul(W_input, current_input) + b_input), idx)
+
+          self.cnn_output = tf.layers.conv2d(state, self.classes_num, [1, 1],
+            kernel_initializer=tf.truncated_normal_initializer(stddev=0.01),
+                  kernel_regularizer=tf.contrib.layers.l2_regularizer(self.weight_decay),
+                  activation=None, name='rnn_output')
+
 
 
     elif self.predict_way == 'batch_max':
@@ -469,7 +489,7 @@ class Model(object):
     Output layer
     """
     if self.predict_way == 'cnn':
-      pass
+      self.output = self.cnn_output
     elif self.predict_way == 'batch_max':
       if self.concatenate_input == True:
         self.output = self.adaption_output
