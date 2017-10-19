@@ -26,11 +26,11 @@ def sigmoid(x):
 
 train_sample_num = 2287
 def main(initial_learning_rate=0.001,
-          gpu=0,
+          gpu=1,
           optimizer=tf.train.AdamOptimizer(1e-4),
           max_steps=train_sample_num * 40,
-          print_every_steps=train_sample_num * 2,
-          save_frequence=train_sample_num * 20,
+          print_every_steps=train_sample_num,
+          save_frequence=train_sample_num * 10,
           num_pred=6,
           shuffle=True,
           batch_size=5,
@@ -106,7 +106,8 @@ def main(initial_learning_rate=0.001,
       saver_model = tf.train.Saver()
 
       config = tf.ConfigProto()
-      config.gpu_options.allow_growth = True
+      if model.gpu:
+        config.gpu_options.allow_growth = True
 
       with tf.Session(config=config) as sess:
         print("Number of dataset: %d"%len(model.raw_dataset))
@@ -119,7 +120,7 @@ def main(initial_learning_rate=0.001,
         else:
           model.init_fn(sess)
         tf.train.start_queue_runners(sess=sess)
-        for x in xrange(max_steps + 1):
+        for x in range(max_steps + 1):
 
           start_time = time.time()
 

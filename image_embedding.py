@@ -39,15 +39,16 @@ import tensorflow as tf
 
 slim = tf.contrib.slim
 
+
 def vgg16_base_layer(images,
-                    output_layer='conv4/conv4_3',
-                    trainable=False,
-                    is_training=True,
-                    weight_decay=0.00004,
-                    stddev=0.1,
-                    dropout_keep_prob=0.5,
-                    add_summaries=False,
-                    scope='base'):
+                     output_layer='conv4/conv4_3',
+                     trainable=False,
+                     is_training=True,
+                     weight_decay=0.00004,
+                     stddev=0.1,
+                     dropout_keep_prob=0.5,
+                     add_summaries=False,
+                     scope='base'):
   """
   """
   if trainable:
@@ -56,15 +57,14 @@ def vgg16_base_layer(images,
     weights_regularizer = None
     is_training = False
 
-
   with slim.arg_scope(
       [slim.conv2d, slim.fully_connected],
       weights_regularizer=weights_regularizer,
       trainable=trainable):
     with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                    activation_fn=tf.nn.relu,
-                    weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
-                    biases_initializer=tf.zeros_initializer()):
+                        activation_fn=tf.nn.relu,
+                        weights_initializer=tf.truncated_normal_initializer(stddev=stddev),
+                        biases_initializer=tf.zeros_initializer()):
       with slim.arg_scope([slim.conv2d], padding='SAME'):
         net, end_points = vgg_16(images, is_training=is_training, scope='vgg_16')
         # print(end_points)
@@ -72,25 +72,26 @@ def vgg16_base_layer(images,
         with tf.variable_scope("logits"):
           output = end_points['vgg_16/' + output_layer]
 
-  # Add summaries.
-  # if add_summaries:
-    # for v in end_points.values():
-      # tf.contrib.layers.summaries.summarize_activation(v)
+          # Add summaries.
+          # if add_summaries:
+          # for v in end_points.values():
+          # tf.contrib.layers.summaries.summarize_activation(v)
 
   return output
 
+
 def adaption_layer(inputs,
-                  num_output,
-                  filters=[4096, 4096],
-                  kernels_size=[[5, 5], [1, 1]],
-                  fc_layers_num=2,
-                  is_training=True,
-                  trainable=True,
-                  weight_decay=0.00004,
-                  stddev=0.1,
-                  dropout_keep_prob=0.5,
-                  add_summaries=True,
-                  scope='adaption'):
+                   num_output,
+                   filters=[4096, 4096],
+                   kernels_size=[[5, 5], [1, 1]],
+                   fc_layers_num=2,
+                   is_training=True,
+                   trainable=True,
+                   weight_decay=0.00004,
+                   stddev=0.1,
+                   dropout_keep_prob=0.5,
+                   add_summaries=True,
+                   scope='adaption'):
   """
   The total layer: max_pooling([2,2]) --> conv2d(filters[0], kernels_size[0], stride=(2,2))
                --> ## avg_pool2d(shape=input_shape[1:3]) which make output shape
@@ -118,9 +119,9 @@ def adaption_layer(inputs,
       net = tf.reduce_mean(net, axis=(1, 2), keep_dims=True)
 
       for idx in range(fc_layers_num):
-        net = slim.conv2d(net, filters[1], kernels_size[1], scope='fc'+str(idx+1))
+        net = slim.conv2d(net, filters[1], kernels_size[1], scope='fc' + str(idx + 1))
         net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-                           scope='dropout'+str(idx+1))
+                           scope='dropout' + str(idx + 1))
 
       net = slim.flatten(net, scope="flatten")
   return net
@@ -139,7 +140,6 @@ def vgg_arg_scope(weight_decay=0.0005):
                       biases_initializer=tf.zeros_initializer()):
     with slim.arg_scope([slim.conv2d], padding='SAME') as arg_sc:
       return arg_sc
-
 
 
 def vgg_16(inputs,
@@ -183,22 +183,8 @@ def vgg_16(inputs,
       net = slim.max_pool2d(net, [2, 2], scope='pool3')
       net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
       net = slim.max_pool2d(net, [2, 2], scope='pool4')
-      net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
-      net = slim.max_pool2d(net, [2, 2], scope='pool5')
-      # Use conv2d instead of fully_connected layers.
-      net = slim.conv2d(net, 4096, [7, 7], padding=fc_conv_padding, scope='fc6')
-      net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-                         scope='dropout6')
-      net = slim.conv2d(net, 4096, [1, 1], scope='fc7')
-      net = slim.dropout(net, dropout_keep_prob, is_training=is_training,
-                         scope='dropout7')
-      net = slim.conv2d(net, num_classes, [1, 1],
-                        activation_fn=None,
-                        normalizer_fn=None,
-                        scope='fc8')
+
       # Convert end_points_collection into a end_point dict.
       end_points = slim.utils.convert_collection_to_dict(end_points_collection)
-      if spatial_squeeze:
-        net = tf.squeeze(net, [1, 2], name='fc8/squeezed')
-        end_points[sc.name + '/fc8'] = net
+
       return net, end_points

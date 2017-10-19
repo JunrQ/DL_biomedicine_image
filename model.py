@@ -356,24 +356,21 @@ class Model(object):
                                     name="input_feed")
     elif self.mode == 'train':
       image_path_list = [d['filename'] for d in self.raw_dataset]
-      label_index_list = [d['label_index'] for d in self.raw_dataset]
+      label_index_list = [tf.convert_to_tensor(d['label_index'], dtype=tf.float32) for d in self.raw_dataset]
 
       filename, label_index = tf.train.slice_input_producer([image_path_list, label_index_list], shuffle=True)
-      images_and_labels = []
-      for thread_id in range(self.num_preprocess_threads):
-        image_buffer = tf.read_file(filename)
+      # label_index = np.fromstring(label_index, dtype='float32')
+      # images_and_labels = []
+      # for thread_id in range(self.num_preprocess_threads):
+      image_buffer = tf.read_file(filename)
 
-        image = tf.image.decode_bmp(image_buffer, channels=3)
-        image = tf.image.convert_image_dtype(image, dtype=tf.float32)
-        images_and_labels.append([image, label_index])
-      images, label_index_batch = tf.train.batch_join(
-          images_and_labels,
-          batch_size=1,
-          capacity=10 * self.num_preprocess_threads)
+      image = tf.image.decode_bmp(image_buffer, channels=3)
+      image = tf.image.convert_image_dtype(image, dtype=tf.float32)
+      # images_and_labels.append([image, label_index])
 
-      images = tf.cast(images, tf.float32)
-      self.images = tf.reshape(images, shape=[tf.shape(images)[0] / self.height, self.height, self.width, 3])
-      self.targets = label_index_batch
+      image = tf.cast(image, tf.float32)
+      self.images = tf.reshape(image, shape=[-1, self.height, self.width, 3])
+      self.targets = tf.expand_dims(label_index, 0)
 
 
 
@@ -610,7 +607,7 @@ class Model(object):
     self.load_data()
     self.build_inputs()
     if self.gpu:
-      with tf.device('/gpu:0'):
+      with tf.device('/gpu:1'):
         self.build_base_model()
       with tf.device('/gpu:1'):
         self.build_finetune_model()
