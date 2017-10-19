@@ -11,13 +11,13 @@ def image_preprocess(image):
     """ Centralize pixel distribution
 
     Args:
-        image: ndarray like object. The pixel values should follow with [0., 1.].
+        image: ndarray like object. The pixel values should follow with [0, 255].
 
     Return:
         centrialized image: pixel values are of approximate uniform distribution with [-1, 1].
     """
     with tf.name_scope('image_preprocess'):
-        image = tf.cast(image, tf.float32)
+        image = tf.cast(image, tf.float32) / 255
         image = (image - 0.5) * 2
         return image
 

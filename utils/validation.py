@@ -3,6 +3,7 @@
 from tensorpack.callbacks import Inferencer
 from functional import seq
 from sklearn.metrics import (average_precision_score, roc_auc_score)
+from scipy.special import expit
 import numpy as np
 
 def _filter_all_negative(logits, label):
@@ -14,15 +15,9 @@ def _filter_all_negative(logits, label):
     return logits[:, keep_mask], label[:, keep_mask]
 
 
-def _sigmoid(x):
-    """ Simple sigmoid activation function.
-    """
-    return 1 / (1 + np.exp(-x))
-
-
 def calcu_ap_auc(logits, labels):
     logits, labels = _filter_all_negative(logits, labels)
-    prob = _sigmoid(logits)
+    prob = expit(logits)
     ap = average_precision_score(labels, prob)
     auc = roc_auc_score(labels, prob)
     return (ap, auc), prob.shape[0]

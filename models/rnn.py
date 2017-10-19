@@ -72,11 +72,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
         # [N, T]
         logits = tf.reshape(
             logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
-        exp_logits = tf.exp(logits, name='exp_logits')
-        mask = tf.sequence_mask(self.length, self._mem_size)
-        effective_exp_logits = exp_logits * tf.cast(mask, logits.dtype)
-        divisor = tf.reduce_sum(effective_exp_logits, keep_dims=True, name='softmax_divisor')
-        attention = effective_exp_logits / divisor
+        attention = self._calcu_attention(logits)
         expanded_attention = tf.tile(tf.reshape(attention, [-1, 1], name='reshape_attention'),
                                      [1, self._feature_size], name='expand_attention')
         weighted = expanded_attention * flatten_mem
@@ -84,6 +80,29 @@ class MemCell(tf.contrib.rnn.RNNCell):
             weighted, [-1, self._mem_size, self._feature_size])
         read = tf.reduce_sum(weighted, axis=1, keep_dims=False)
         return read
+    
+    def _calcu_attention(self, logits):
+        exp_logits = self._stable_exp(logits)
+        mask = tf.sequence_mask(self.length, self._mem_size)
+        eff_exp_logits = exp_logits * tf.cast(mask, logits.dtype)
+        divisor = tf.reduce_sum(eff_exp_logits, axis=1, keep_dims=True, name='softmax_divisor')
+        att = eff_exp_logits / (divisor + 1e-10)
+        att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
+        return att
+    
+    def _calcu_attention_bug(self, logits):
+        """ Caution: This function is not correct, it is merely a backup.
+        """
+        mask = tf.sequence_mask(self.length, self._mem_size)
+        eff_logits = logits * tf.cast(mask, logits.dtype)
+        att = tf.nn.softmax(eff_logits)
+        att_debug = att * tf.cast(mask, logits.dtype) 
+        att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
+        return att
+    
+    def _stable_exp(self, logits):
+        sub = tf.reduce_max(logits, axis=1, keep_dims=True, name='max_att_logits')
+        return tf.exp(logits - sub, name='exp_att_logits')
 
     @property
     def state_size(self):
@@ -111,6 +130,7 @@ class RNN(ModelDesc):
         self.read_time = config.read_time
         self.label_num = config.annotation_number
         self.use_glimpse = config.use_glimpse
+        self.batch_size = config.batch_size
         self.cost = None
 
     def _get_inputs(self):
