@@ -128,7 +128,7 @@ class RNN(ModelDesc):
         """
         self.weight_decay = config.weight_decay
         self.read_time = config.read_time
-        self.label_num = config.label_num
+        self.label_num = config.annotation_number
         self.max_sequence_length = config.max_sequence_length
         self.use_glimpse = config.use_glimpse
         self.batch_size = config.batch_size
@@ -137,7 +137,7 @@ class RNN(ModelDesc):
     def _get_inputs(self):
         """ Required by the base class.
         """
-        return [InputDesc(tf.float32, [None, None, 128, 320, 3], 'image'),
+        return [InputDesc(tf.float32, [None, self.max_sequence_length, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
                 InputDesc(tf.int32, [None, self.label_num], 'label')]
 
@@ -148,10 +148,9 @@ class RNN(ModelDesc):
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature(image, ctx.is_training, self.weight_decay)
-        feature = self._pad_to_max_len(feature, self.max_sequence_length)
 
         with tf.variable_scope('rnn'):
-            rnn_cell = MemCell(feature, length, self.weight_decay)
+            rnn_cell = MemCell(feature, length, self.weight_decay, self.max_sequence_length)
             # the content of input sequence for the lstm cell is irrelevant, but we need its length
             # information to deduce read_time
             dummy_input = [tf.zeros([N, 1])] * self.read_time

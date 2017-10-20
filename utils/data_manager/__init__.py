@@ -85,7 +85,7 @@ class DataManager(object):
         stream = self._build_basic_stream(self.test_set)
         return stream
 
-    def get_positive_ratio(self, name):
+    def get_positive_ratio(self):
         """ Get the ratio of positive samples with in each label.
         """
         df = pd.DataFrame(index=self.binarizer.classes_)
@@ -102,7 +102,7 @@ class DataManager(object):
         return self.binarizer.inverse_transform(encoding)
 
     def _positive_ratio(self, data_set):
-        labels = np.asarray(data_set.annotation, dtype=np.int32)
+        labels = np.array(data_set.annotation.values)
         return np.sum(labels, axis=0) / labels.shape[0]
 
     def _build_basic_stream(self, data_set):
@@ -131,7 +131,8 @@ class DataManager(object):
         return stream
 
     def _encode_labels(self, labels):
-        return self.binarizer.fit_transform(labels)
+        mat = self.binarizer.fit_transform(labels)
+        return list(iter(mat))
 
 
 def _load_image(url_list, img_dir, img_size):

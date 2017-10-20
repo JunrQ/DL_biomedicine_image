@@ -63,12 +63,12 @@ def calcu_one_metric(scores, labels, metric, threshold=None):
         # see http://scikit-learn.org/stable/modules/model_evaluation.html#coverage-error
         ans = cove - 1
 
-    elif metric == 'rank_loss':
+    elif metric == 'ranking_loss':
         ans = metrics.label_ranking_loss(labels, scores)
 
     elif metric == 'one_error':
         top_score = np.argmax(scores, axis=1)
-        top_label = labels[:, top_score]
+        top_label = labels[range(len(top_score)), top_score]
         ans = 1 - np.sum(top_label) / len(top_label)
 
     else:
@@ -77,10 +77,12 @@ def calcu_one_metric(scores, labels, metric, threshold=None):
     return ans
 
 
-def calcu_metrics(logits, labels, queries):
+def calcu_metrics(logits, labels, queries, threshold):
+    """ Calculate metrics specified by queries from logits and labels.
+    """
     scores = expit(logits)
     ans = seq(queries).map(
-        lambda m: calcu_one_metric(scores, labels, m)).list()
+        lambda m: calcu_one_metric(scores, labels, m, threshold)).list()
     return ans
 
 
@@ -119,8 +121,9 @@ class AggerateMetric(Inferencer):
     """ Calculate mAP, AUC and loss metrics using validation set.
     """
 
-    def __init__(self, queries):
+    def __init__(self, queries, threshold):
         self.queries = queries
+        self.threshold = threshold
         self.accu = Accumulator(*queries)
 
     def _get_fetches(self):
@@ -135,7 +138,7 @@ class AggerateMetric(Inferencer):
         """
         logits, labels= results
         batch_size = logits.shape[0]
-        new_values = calcu_metrics(logits, labels, self.queries)
+        new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
         self.accu.feed(batch_size, *new_values)
 
     def _before_inference(self):

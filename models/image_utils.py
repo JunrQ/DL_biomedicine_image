@@ -50,7 +50,7 @@ def extract_feature(images, is_training, weight_decay):
                     merge_dim, is_training=is_training)
 
     # features from resnet
-    feat = end_points['resnet_v2_101/block3']
+    feature = end_points['resnet_v2_101/block3']
     # add new conv layers
     with tf.variable_scope('custom_cnn'):
         with slim.arg_scope(resnet_arg_scope(use_batch_norm=False)):
