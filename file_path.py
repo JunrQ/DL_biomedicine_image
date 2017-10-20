@@ -6,7 +6,7 @@ GRAND_PARENT_PATH = r'/home/litiange/prp_file'
 # PKL_PATH = r'E:\zcq\codes\pkl'
 PKL_PATH = os.path.join(GRAND_PARENT_PATH, 'pkl')
 
-PARENT_PATH = os.path.join(GRAND_PARENT_PATH, 'model/6-30')
+PARENT_PATH = os.path.join(GRAND_PARENT_PATH, 'model/6-30-rnn')
 
 # where to save dataset: self.raw_dataset, self.vocab, after load_data
 RAW_DATASET_PATH = os.path.join(PARENT_PATH, 'raw_dataset.pkl')
@@ -25,10 +25,11 @@ IMAGE_PARENT_PATH = '/home/litiange/pic_data'
 # tensorflow ckpt file, trained weight file
 CKPT_PATH = os.path.join(GRAND_PARENT_PATH, 'vgg_16.ckpt')
 
+CONFIG_PATH = os.path.join(PARENT_PATH, 'config.pkl')
 # it is TOP 60
 SAVE_PATH = os.path.join(PARENT_PATH, 'model.ckpt')
-MODEL_CKPT_PATH = os.path.join(PARENT_PATH, 'model.ckpt-43320')
-# MODEL_CKPT_PATH = None
+# MODEL_CKPT_PATH = os.path.join(PARENT_PATH, 'model.ckpt-45740')
+MODEL_CKPT_PATH = None
 # MODEL_CKPT_PATH = r'E:\zcq\codes\weakcnn\theano\6-10\model.ckpt-5000'
 
 SAVE_RESULT_PATH = os.path.join(PARENT_PATH, 'result.pkl')

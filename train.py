@@ -21,15 +21,17 @@ from file_path import *
 
 import math
 
+import pickle
+
 def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
-train_sample_num = 2287
+train_sample_num = 2093 # test 572
 def main(initial_learning_rate=0.001,
           gpu=1,
           optimizer=tf.train.AdamOptimizer(1e-4),
           max_steps=train_sample_num * 40,
-          print_every_steps=train_sample_num,
+          print_every_steps=int(train_sample_num / 4),
           save_frequence=train_sample_num * 10,
           num_pred=6,
           shuffle=True,
@@ -38,15 +40,16 @@ def main(initial_learning_rate=0.001,
           min_annot_num=20,
           concatenate_input=False,
           weight_decay=0.000005,
-          predict_way='batch_max',
+          predict_way='rnn',
+          mode='train',
           input_queue_length=80,
           stage_allowed=[6],
-          adaption_layer_filters=[2048, 2048, 1024],
+          adaption_layer_filters=[1024, 512, 64],
           adaption_kernels_size=[[3, 3], [3, 3], [3, 3]],
           adaption_layer_strides=[(1, 1), (1, 1), (1, 1)],
           adaption_fc_layers_num=0,
           adaption_fc_filters=[],
-          neg_threshold=0.1,
+          neg_threshold=0.3,
           pos_threshold=0.9,
           loss_ratio=5.0
           ):
@@ -57,6 +60,16 @@ def main(initial_learning_rate=0.001,
   Return:
 
   """
+  config_dict = {'adaption_layer_filters': adaption_layer_filters,
+                 'adaption_kernels_size': adaption_kernels_size,
+                 'adaption_layer_strides': adaption_layer_strides,
+                 'adaption_fc_layers_num': adaption_fc_layers_num,
+                 'adaption_fc_filters': adaption_fc_filters,
+                 'stage_allowed': stage_allowed}
+  with open(CONFIG_PATH, 'wb') as f:
+    pickle.dump(config_dict, f, True)
+
+
   g = tf.Graph()
   with g.as_default():
 
@@ -77,7 +90,7 @@ def main(initial_learning_rate=0.001,
     model = Model(ckpt_path=CKPT_PATH,
                   gpu=gpu,
                   model_ckpt_path=MODEL_CKPT_PATH,
-                  mode='supervise',
+                  mode=mode,
                   concatenate_input=concatenate_input,
                   predict_way=predict_way,
                   min_annot_num=min_annot_num,
@@ -97,51 +110,92 @@ def main(initial_learning_rate=0.001,
     model.build()
     vocab = np.array(model.vocab)
 
-    if model.mode == 'train' and model.predict_way == 'batch_max':
-      train_op = optimizer.minimize(
-        model.total_loss
-      )
-      # summary_op = tf.merge_all_summaries()
-      init = tf.global_variables_initializer()
-      saver_model = tf.train.Saver()
+    if model.mode == 'train':
+      if predict_way == 'batch_max':
+        train_op = optimizer.minimize(
+          model.total_loss
+        )
+        # summary_op = tf.merge_all_summaries()
+        init = tf.global_variables_initializer()
+        saver_model = tf.train.Saver()
 
-      config = tf.ConfigProto()
-      if model.gpu:
-        config.gpu_options.allow_growth = True
+        config = tf.ConfigProto()
+        if model.gpu:
+          config.gpu_options.allow_growth = True
 
-      with tf.Session(config=config) as sess:
-        print("Number of dataset: %d"%len(model.raw_dataset))
-        print("Number of test dataset: %d"%len(model.valid_dataset))
-        print("Number of classes: %d"%model.classes_num)
-        print("Vocab: ", model.vocab)
-        sess.run(init)
-        if model.model_ckpt_path:
-          model.model_init_fn(sess)
-        else:
-          model.init_fn(sess)
-        tf.train.start_queue_runners(sess=sess)
-        for x in range(max_steps + 1):
-
+        with tf.Session(config=config) as sess:
+          print("Number of dataset: %d"%len(model.raw_dataset))
+          print("Number of test dataset: %d"%len(model.valid_dataset))
+          print("Number of classes: %d"%model.classes_num)
+          print("Vocab: ", model.vocab)
+          sess.run(init)
+          if model.model_ckpt_path:
+            model.model_init_fn(sess)
+          else:
+            model.init_fn(sess)
+          tf.train.start_queue_runners(sess=sess)
           start_time = time.time()
+          for x in range(max_steps + 1):
 
-          step = sess.run(model.global_step)
-          i = [train_op, model.total_loss]
+            i = [train_op, model.total_loss]
 
-          o = sess.run(i)
-          loss_value = o[1]
+            o = sess.run(i)
+            loss_value = o[1]
 
-          duration = time.time() - start_time
+            localtime = time.asctime(time.localtime(time.time()))
 
-          if step % 500 == 0:
-            format_str = ('step %d, loss = %.2f ,%.3f sec/batch')
-            print(format_str % (step, loss_value, duration))
-
-
-          if (step > 1) and (step % save_frequence == 0):
-            saver_model.save(sess, SAVE_PATH, global_step=step)
+            if (x % 1000 == 0) and (x > 0):
+              duration = time.time() - start_time
+              format_str = ('step %d, loss = %.2f ,%.3f sec/1000 samples. Time: %s')
+              print(format_str % (x, loss_value, duration, localtime))
+              start_time = time.time()
 
 
+            if (x > 1) and (x % save_frequence == 0):
+              saver_model.save(sess, SAVE_PATH, global_step=x)
 
+      elif predict_way == 'rnn':
+        train_op = optimizer.minimize(
+          model.total_loss
+        )
+        # summary_op = tf.merge_all_summaries()
+        init = tf.global_variables_initializer()
+        saver_model = tf.train.Saver()
+
+        config = tf.ConfigProto()
+        if model.gpu:
+          config.gpu_options.allow_growth = True
+
+        with tf.Session(config=config) as sess:
+          print("Number of dataset: %d" % len(model.raw_dataset))
+          print("Number of test dataset: %d" % len(model.valid_dataset))
+          print("Number of classes: %d" % model.classes_num)
+          print("Vocab: ", model.vocab)
+          sess.run(init)
+          if model.model_ckpt_path:
+            model.model_init_fn(sess)
+          else:
+            model.init_fn(sess)
+          tf.train.start_queue_runners(sess=sess)
+          start_time = time.time()
+          for x in range(max_steps + 1):
+
+            i = [train_op, model.total_loss]
+
+            o = sess.run(i, {model.initial_state: np.zeros((model.rnn_state_dim, 1), dtype='float32'),
+                             model.initial_memory: np.zeros((model.memory_dim, 1), dtype='float32')})
+            loss_value = o[1]
+
+            localtime = time.asctime(time.localtime(time.time()))
+
+            if (x % 1000 == 0) and (x > 0):
+              duration = time.time() - start_time
+              format_str = ('step %d, loss = %.2f ,%.3f sec/1000 samples. Time: %s')
+              print(format_str % (x, loss_value, duration, localtime))
+              start_time = time.time()
+
+            if (x > 1) and (x % save_frequence == 0):
+              saver_model.save(sess, SAVE_PATH, global_step=x)
 
     elif model.mode == 'supervise':
       if model.predict_way == 'batch_max':
@@ -262,8 +316,6 @@ def main(initial_learning_rate=0.001,
                                     model.targets: l})
 
       elif model.predict_way == 'rnn':
-        # Set up the learning rate.
-        learning_rate_decay_fn = None
 
         train_op = optimizer.minimize(
           model.total_loss
@@ -341,8 +393,9 @@ def main(initial_learning_rate=0.001,
                 # print(i_new[tmp])
 
               i = i_new
-              i = np.repeat(i, int(model.max_img / len(i)) + 1, axis=0)
-              i = i[:model.max_img]
+              if model.save_way != 'equal_batch':
+                i = np.repeat(i, int(model.max_img / len(i)) + 1, axis=0)
+                i = i[:model.max_img]
               if shuffle:
                 np.random.shuffle(i)
 
@@ -352,8 +405,6 @@ def main(initial_learning_rate=0.001,
               prob = sess.run([model.output,
                                model.output_prob,
                                model.targets,
-                               model.logits_neg,
-                               model.logits_pos,
                                model.total_loss,
                                model.cross_entropy],
                               feed_dict={model.images: i,

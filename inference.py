@@ -31,28 +31,11 @@ import pickle
 def sigmoid(x):
   return 1 / (1 + math.exp(-x))
 
-def main(initial_learning_rate=0.001,
-          optimizer=tf.train.AdamOptimizer(1e-4),
-          max_steps=999999999999,
-          print_every_steps=500,
-          save_frequence=1000,
+def main(max_steps=999999999999,
           num_pred=5,
-          shuffle=False,
-          batch_size=5,
-          top_k_labels=10,
-          min_annot_num=150,
           concatenate_input=False,
           weight_decay=0.000005,
           predict_way='batch_max',
-          input_queue_length=80,
-          stage_allowed=[6],
-          adaption_layer_filters=[4096, 4096],
-          adaption_kernels_size=[[5, 5], [3, 3]],
-          adaption_layer_strides=[(2, 2), (1, 1)],
-          adaption_fc_layers_num=1,
-          adaption_fc_filters=[2048],
-          top_k_accuracy=3,
-          threshold=0.8,
           calculusN=100
           ):
   """
@@ -62,6 +45,15 @@ def main(initial_learning_rate=0.001,
   Return:
 
   """
+  with open(CONFIG_PATH, 'rb') as f:
+    config_dict = pickle.load(f)
+  adaption_layer_filters = config_dict['adaption_layer_filters']
+  adaption_kernels_size = config_dict['adaption_kernels_size']
+  adaption_layer_strides = config_dict['adaption_layer_strides']
+  adaption_fc_layers_num = config_dict['adaption_fc_layers_num']
+  adaption_fc_filters = config_dict['adaption_fc_filters']
+  stage_allowed = config_dict['stage_allowed']
+
   g = tf.Graph()
   with g.as_default():
 
@@ -84,10 +76,7 @@ def main(initial_learning_rate=0.001,
                   mode='inference',
                   concatenate_input=concatenate_input,
                   predict_way=predict_way,
-                  min_annot_num=min_annot_num,
-                  top_k_labels=top_k_labels,
                   weight_decay=weight_decay,
-                  stage_allowed=stage_allowed,
                   adaption_layer_filters=adaption_layer_filters,
                   adaption_kernels_size=adaption_kernels_size,
                   adaption_layer_strides=adaption_layer_strides,
@@ -101,21 +90,19 @@ def main(initial_learning_rate=0.001,
     if model.mode == 'inference' and model.predict_way == 'batch_max':
 
       init = tf.global_variables_initializer()
-      if shuffle:
-        np.random.shuffle(model.valid_dataset)
       dataset = iter(model.valid_dataset)
 
       data_num = 0
       data_total_num = len(model.valid_dataset)
-      # data_total_num = 5
-
-      # accuracy = 0
-      # total_sample = 0
 
       y_true = [] # shape [n_samples, n_classes]
       y_score = [] # shape [n_samples, n_classes]
 
-      with tf.Session() as sess:
+      config = tf.ConfigProto()
+      if model.gpu:
+        config.gpu_options.allow_growth = True
+
+      with tf.Session(config=config) as sess:
         print("Number of test dataset: %d"%len(model.valid_dataset))
         print("Number of classes: %d"%model.classes_num)
         sess.run(init)
@@ -206,12 +193,19 @@ def main(initial_learning_rate=0.001,
       average_precision = average_precision_score(y_true[:, 0], y_score[:, 0])
       print("Average precision: ", average_precision)
 
-      # f1 score
-      y_pred = np.where(y_score >= threshold, 1, 0)
-      sk_f1_micro = f1_score(y_true, y_pred, average='micro')
-      sk_f1_macro = f1_score(y_true, y_pred, average='macro')
-      print("sklearn f1 micro score: ", sk_f1_micro)
-      print("sklearn f1 macro score: ", sk_f1_macro)
+      f1_result = []
+      for threshold_ in np.linspace(0.3, 0.95, num=10):
+        # f1 score
+        y_pred = np.where(y_score >= threshold_, 1, 0)
+        sk_f1_micro = f1_score(y_true, y_pred, average='micro')
+        sk_f1_macro = f1_score(y_true, y_pred, average='macro')
+        f1_result.append({'sk f1 micro': sk_f1_micro,
+                          'sk f1 macro': sk_f1_macro,
+                          'threshold': threshold_})
+      # print("sklearn f1 score", f1_result)
+      f1_macro_result = [d['sk f1 macro'] for d in f1_result]
+      f1_max_idx = np.argmax(f1_macro_result)
+      print("max f1 macro score", f1_result[f1_max_idx])
 
       TP = np.multiply(y_true, y_pred)
       FP = np.multiply(1 - y_true, y_pred)
@@ -230,30 +224,7 @@ def main(initial_learning_rate=0.001,
         recall_ = 1.0 * np.sum(tp) / (np.sum(tp) + np.sum(fn))
         f1_macro += (2.0 * precision_ * recall_ / (precision_ + recall_))
 
-      '''
-      for threshold in np.linspace(0.0, 1.0, num=calculusN, endpoint=False):
-        y_pred = np.where(y_score >= threshold, 1, 0)
-        TP = np.multiply(y_true, y_pred)
-        FP = np.multiply(1 - y_true, y_pred)
-        FN = np.multiply(y_true, 1 - y_pred)
-        precision = 1.0 * np.sum(TP) / (np.sum(FP) + np.sum(TP))
-        recall = 1.0 * np.sum(TP) / (np.sum(TP) + np.sum(FN))
-        f1_micro += (2.0 * precision * recall / (precision + recall) / calculusN)
 
-        for idx in range(y_true.shape[1]):
-          y_true_ = y_true[:, idx]
-          y_pred_ = y_pred[:, idx]
-          tp = np.multiply(y_true_, y_pred_)
-          fp = np.multiply(1 - y_true_, y_pred_)
-          fn = np.multiply(y_true_, 1 - y_pred_)
-          precision_ = 1.0 * np.sum(tp) / (np.sum(fp) + np.sum(tp))
-          recall_ = 1.0 * np.sum(tp) / (np.sum(tp) + np.sum(fn))
-          f1_macro += (2.0 * precision_ * recall_ / (precision_ + recall_) / calculusN)
-      '''
-
-      f1_macro /= model.classes_num
-      print("f1 micro score: ", f1_micro)
-      print("f1 macro score: ", f1_macro)
 
       TPR = []
       FPR = []
@@ -285,10 +256,7 @@ def main(initial_learning_rate=0.001,
       one_error = 1.0 - np.sum(max_list) / data_total_num
       print("One error: ", one_error)
 
-      result = {'f1 micro': f1_micro,
-                'f1 macro': f1_macro,
-                'sk f1 micro': sk_f1_micro,
-                'sk f1 macro': sk_f1_macro,
+      result = {'f1 result': f1_result,
                 'coverage': sk_coverage,
                 'ranking loss': sk_ranking_loss,
                 'one error': one_error,

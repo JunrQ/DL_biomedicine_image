@@ -153,7 +153,7 @@ def get_image_from_urls_list_concat_dim0(urls_list,
     if first == len(urls_list):
         return im
     if first == -1:
-        print("All urls failed.")
+        # print("All urls failed.")
         return -1
 
     for idx in range(first, len(urls_list)):
@@ -195,7 +195,7 @@ def get_image_from_urls_list_concat_dimNone(urls_list,
     if first == len(urls_list):
         return im
     if first == 0:
-        print("All urls failed.")
+        # print("All urls failed.")
         return -1
 
     im = im[None, :]

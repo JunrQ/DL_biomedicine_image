@@ -59,7 +59,8 @@ class Model(object):
                split_labels=False,
                neg_threshold=0.2,
                pos_threshold=0.9,
-               loss_ratio=10
+               loss_ratio=10,
+               save_way='equal_batch'
                ):
     """
     Args:
@@ -133,6 +134,7 @@ class Model(object):
     self.loss_ratio = loss_ratio
     self.rnn_state_dim = rnn_state_dim
     self.gpu = gpu
+    self.save_way = save_way
 
   def load_data(self):
     """
@@ -156,6 +158,7 @@ class Model(object):
           self.valid_dataset = pickle.load(f)
           # print(self.raw_dataset)
       else:
+        print("Preparing dataset, please wait")
         self.raw_dataset = []
         self.vocab = []
 
@@ -286,7 +289,11 @@ class Model(object):
           # print(gene_stage)
           # print(urls_list)
           # print(label)
-          img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
+          if self.save_way == 'equal_batch':
+            img_file_name = os.path.join(DATASET_PAR_PATH, 'r_' + str(len(urls_list)) + '_' +
+                                         gene_stage + '.' + self.image_foramt)
+          else:
+            img_file_name = os.path.join(DATASET_PAR_PATH, gene_stage + '.' + self.image_foramt)
           label_index = ops.annot2vec(label, self.vocab)
           if os.path.exists(img_file_name):
             self.raw_dataset.append({'filename': img_file_name,
@@ -299,6 +306,11 @@ class Model(object):
           #print(_image.shape)
           if isinstance(_image, int):
             continue
+          if self.save_way == 'equal_batch':
+            temp_image = _image
+            for tmp_idx in range(int(self.max_img / (_image.shape[0] / self.height) + 1)):
+              temp_image = np.concatenate((temp_image, _image))
+            _image = temp_image[:self.max_img * self.height]
 
           skimage.io.imsave(img_file_name, _image)
           self.raw_dataset.append({'filename': img_file_name,
@@ -369,7 +381,9 @@ class Model(object):
       # images_and_labels.append([image, label_index])
 
       image = tf.cast(image, tf.float32)
-      self.images = tf.reshape(image, shape=[-1, self.height, self.width, 3])
+      # image = tf.image.resize_images(image, image.get_shape()[0])
+
+      self.images = tf.reshape(image, shape=[self.max_img, self.height, self.width, 3])
       self.targets = tf.expand_dims(label_index, 0)
 
 
@@ -430,7 +444,7 @@ class Model(object):
         W_s = tf.Variable(tf.truncated_normal(shape=[self.rnn_state_dim, _area + self.rnn_state_dim]))
         b_s = tf.Variable(tf.zeros(shape=[self.rnn_state_dim, 1]))
 
-        W_m = tf.Variable(tf.truncated_normal(shape=[_area, _area + self.rnn_state_dim]))
+        # W_m = tf.Variable(tf.truncated_normal(shape=[_area, _area + self.rnn_state_dim]))
 
         # initial state
         self.initial_state = tf.placeholder(tf.float32, [self.rnn_state_dim, 1])
@@ -470,6 +484,7 @@ class Model(object):
       net = self.vgg_output
       with tf.variable_scope("adaption", values=[net]) as scope:
         # pool0
+        net = tf.nn.max_pool(net, ksize=[1, 2, 2, 1], strides=[1, 2, 2, 1], padding='SAME')
         # net = slim.max_pool2d(self.vgg_output, [2, 2], scope='pool0')
         # conv1
         for tmp_idx in range(len(self.adaption_layer_filters)):
@@ -534,6 +549,9 @@ class Model(object):
     """
     #
     if self.predict_way == 'rnn':
+      logits = self.output
+      # labels = self.targets
+      self.output_prob = tf.sigmoid(logits)
       self.cross_entropy = -(tf.reduce_sum(tf.multiply((1 - self.targets), tf.log(1. - self.output_prob + 1e-10))) +
                              self.loss_ratio * tf.reduce_sum(
                                tf.multiply(self.targets, tf.log(self.output_prob + 1e-10)))
@@ -596,7 +614,7 @@ class Model(object):
     # Restore inception variables only
     saver = tf.train.Saver(self.all_vars)
     def restore_fn(sess):
-      tf.logging.info("Restoring vgg variables from checkpoint file %s",
+      tf.logging.info("Restoring trained variables from checkpoint file %s",
                       self.model_ckpt_path)
       saver.restore(sess, self.model_ckpt_path)
     self.model_init_fn = restore_fn
@@ -607,15 +625,19 @@ class Model(object):
     self.load_data()
     self.build_inputs()
     if self.gpu:
-      with tf.device('/gpu:1'):
+      with tf.device('/gpu:0'):
         self.build_base_model()
       with tf.device('/gpu:1'):
         self.build_finetune_model()
+        self.build_output_layer()
+        self.build_model()
+
     else:
       self.build_base_model()
       self.build_finetune_model()
-    self.build_output_layer()
-    self.build_model()
+      self.build_output_layer()
+      self.build_model()
+
     self.setup_finetune_model_initializer()
     if self.model_ckpt_path:
       self.setup_model_initializer()
