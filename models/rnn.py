@@ -166,6 +166,9 @@ class RNN(ModelDesc):
         add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
+        # training metric
+        auc, _ = tf.metrics.auc(label, tf.sigmoid(logits), updates_collections=[tf.GraphKeys.UPDATE_OPS])
+        tf.summary.scalar(auc)
         self.cost = loss
 
     def _calcu_glimpse(self, feature, length):
