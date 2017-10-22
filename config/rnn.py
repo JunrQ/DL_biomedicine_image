@@ -18,9 +18,10 @@ default.proportion = {'train': 0.6, 'val': 0.2, 'test': 0.2}
 default.tolerance_margin = 0.02
 default.shuffle_separation = True
 default.validation_metrics = ['mean_average_precision', 'macro_auc', 'micro_auc',
-                              'macro_f1', 'micro_f1', 'rank_mean_average_precision',
+                              'macro_f1', 'micro_f1', 'ranking_mean_average_precision',
                               'coverage', 'ranking_loss', 'one_error']
 default.use_glimpse = False
 default.read_time = 5
 default.weight_decay = 5e-4
-default.batch_size = 64
+default.drop_out_keep = 0.5 
+default.batch_size = 32

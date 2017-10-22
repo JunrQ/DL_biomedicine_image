@@ -126,20 +126,15 @@ class RNN(ModelDesc):
             label_num: Number of classes.
             weight_decay: l2 regularizer parameter.
         """
-        self.weight_decay = config.weight_decay
-        self.read_time = config.read_time
-        self.label_num = config.annotation_number
-        self.max_sequence_length = config.max_sequence_length
-        self.use_glimpse = config.use_glimpse
-        self.batch_size = config.batch_size
+        self.config = config
         self.cost = None
 
     def _get_inputs(self):
         """ Required by the base class.
         """
-        return [InputDesc(tf.float32, [None, self.max_sequence_length, 128, 320, 3], 'image'),
+        return [InputDesc(tf.float32, [None, self.config.max_sequence_length, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
-                InputDesc(tf.int32, [None, self.label_num], 'label')]
+                InputDesc(tf.int32, [None, self.config.annotation_number], 'label')]
 
     def _build_graph(self, inputs):
         """ Required by the base class.
@@ -147,21 +142,22 @@ class RNN(ModelDesc):
         image, length, label = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
-        feature = extract_feature(image, ctx.is_training, self.weight_decay)
+        feature = extract_feature(image, ctx.is_training, self.config.weight_decay)
 
         with tf.variable_scope('rnn'):
-            rnn_cell = MemCell(feature, length, self.weight_decay, self.max_sequence_length)
+            rnn_cell = MemCell(feature, length, self.config.weight_decay, self.config.max_sequence_length)
             # the content of input sequence for the lstm cell is irrelevant, but we need its length
             # information to deduce read_time
-            dummy_input = [tf.zeros([N, 1])] * self.read_time
+            dummy_input = [tf.zeros([N, 1])] * self.config.read_time
             initial_state = self._calcu_glimpse(
-                feature, length) if self.use_glimpse else None
+                feature, length) if self.config.use_glimpse else None
             _, final_encoding = tf.nn.static_rnn(
                 rnn_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
 
-        logits = slim.fully_connected(final_encoding, self.label_num, activation_fn=None,
+        #final_encoding = tf.nn.dropout(final_encoding, self.config.drop_out_keep, name='dropout')
+        logits = slim.fully_connected(final_encoding, self.config.annotation_number, activation_fn=None,
                                       weights_regularizer=slim.l2_regularizer(
-                                          self.weight_decay),
+                                          self.config.weight_decay),
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')

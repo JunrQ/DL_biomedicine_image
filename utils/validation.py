@@ -55,7 +55,7 @@ def calcu_one_metric(scores, labels, metric, threshold=None):
         pred = pred_from_score(scores, threshold)
         ans = metrics.f1_score(labels, pred, average='micro')
 
-    elif metric == 'rank_mean_average_precision':
+    elif metric == 'ranking_mean_average_precision':
         ans = metrics.label_ranking_average_precision_score(labels, scores)
 
     elif metric == 'coverage':
