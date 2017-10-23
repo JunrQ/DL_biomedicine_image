@@ -14,7 +14,7 @@ class SeparationScheme(object):
 
     def __init__(self, config):
         self.stages = config.stages
-        self.directions =config.directions
+        self.directions = config.directions
         self.annotation_threshold = config.annotation_number
         self.proportion = config.proportion
         self.tolerance_margin = config.tolerance_margin
@@ -45,31 +45,37 @@ class SeparationScheme(object):
             image_table, annot_table)
 
         merged_table = self._merge_image_and_annot(image_table, annot_table)
-        
+
         if self.shuffle:
             merged_table = merged_table.sample(frac=1, random_state=123321123)
-            
+
         test_set, remain = self._seperate_one_part(
-            merged_table, self.proportion['test'], self.tolerance_margin)    
+            merged_table, self.proportion['test'], self.tolerance_margin)
         # rebalance proportion
-        train_proportion = self.proportion['train'] / (self.proportion['train'] + self.proportion['val'] )
+        train_proportion = self.proportion['train'] / \
+            (self.proportion['train'] + self.proportion['val'])
         train_set, remain = self._seperate_one_part(
             remain, train_proportion, self.tolerance_margin)
 
-        self._log_separation(train_set, remain, test_set)
-        return DataSep(train=train_set, validation=remain, test=test_set), vocab
-    
+        info = self._log_separation(train_set, remain, test_set)
+        return DataSep(train=train_set, validation=remain, test=test_set), vocab, info
+
     def _log_separation(self, train_set, val_set, test_set):
         img_nums = seq((train_set, val_set, test_set)) \
             .map(self._unroll) \
             .map(len) \
             .list()
-        
+
         print("Group numbers:")
-        print(f"    train: {len(train_set)}, validation: {len(val_set)}, test: {len(test_set)}")
+        print(
+            f"train: {len(train_set)}, validation: {len(val_set)}, test: {len(test_set)}")
         print("Image numbers:")
-        print(f"    train: {img_nums[0]}, validation: {img_nums[1]}, test: {img_nums[2]}")
-        
+        print(
+            f"train: {img_nums[0]}, validation: {img_nums[1]}, test: {img_nums[2]}")
+
+        return {'train': (len(train_set), img_nums[0]), 'val': (len(val_set), img_nums[1]),
+                'test': (len(test_set), img_nums[2])}
+
     def _seperate_one_part(self, table, percentage, tolerance_margin):
         annot_stat_dict = self._build_annot_statistic(table)
         selected_group_indices = []
@@ -132,10 +138,10 @@ class SeparationScheme(object):
 
     def _merge_image_and_annot(self, image_table, annot_table):
         return pd.concat([image_table, annot_table], axis=1)
-    
+
     def _unroll(self, series):
         return seq(series).flat_map(lambda l: l).list()
-        
+
     def _reverse_annot_map(self, annot_table):
         unrolled = self._unroll(annot_table.annotation)
         unique = pd.Series(unrolled).unique()

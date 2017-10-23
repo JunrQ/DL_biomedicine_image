@@ -47,8 +47,9 @@ class DataManager(object):
         image_table = load_image_table(config.image_table_location)
         annot_table = load_annot_table(config.annotation_table_location)
         sep_scheme = SeparationScheme(config)
-        separated, vocabulary = sep_scheme.separate(image_table, annot_table)
+        separated, vocabulary, num_info = sep_scheme.separate(image_table, annot_table)
         self.binarizer = MultiLabelBinarizer(classes=vocabulary)
+        self.dataset_num_info = num_info
         train_set = separated.train
         val_set = separated.validation
         test_set = separated.test
