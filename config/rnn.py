@@ -20,8 +20,8 @@ default.shuffle_separation = True
 default.validation_metrics = ['mean_average_precision', 'macro_auc', 'micro_auc',
                               'macro_f1', 'micro_f1', 'ranking_mean_average_precision',
                               'coverage', 'ranking_loss', 'one_error']
-default.use_glimpse = False
+default.use_glimpse = True
 default.read_time = 5
-default.weight_decay = 5e-4
-default.drop_out_keep = 0.5 
-default.batch_size = 32
+default.weight_decay = 0.0
+default.dropout_keep_prob = 0.5
+default.batch_size = 64

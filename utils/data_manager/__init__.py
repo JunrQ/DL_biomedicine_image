@@ -86,14 +86,17 @@ class DataManager(object):
         stream = self._build_basic_stream(self.test_set)
         return stream
 
-    def get_positive_ratio(self):
-        """ Get the ratio of positive samples with in each label.
+    def get_imbalance_ratio(self):
+        """ Get the ratio of imbalance of each label.
         """
         df = pd.DataFrame(index=self.binarizer.classes_)
-        df['train'] = self._positive_ratio(self.train_set)
-        df['val'] = self._positive_ratio(self.val_set)
-        df['test'] = self._positive_ratio(self.test_set)
+        df['train'] = self._imbalance_ratio(self.train_set)
+        df['val'] = self._imbalance_ratio(self.val_set)
+        df['test'] = self._imbalance_ratio(self.test_set)
         return df
+    
+    def get_num_info(self):
+        return self.dataset_num_info
 
     def recover_label(self, encoding):
         """ Turn one-hot encoding back to string labels.
@@ -102,9 +105,10 @@ class DataManager(object):
         """
         return self.binarizer.inverse_transform(encoding)
 
-    def _positive_ratio(self, data_set):
+    def _imbalance_ratio(self, data_set):
         labels = np.array(data_set.annotation.values)
-        return np.sum(labels, axis=0) / labels.shape[0]
+        posi_ratio = np.sum(labels, axis=0) / labels.shape[0]
+        return (1 - posi_ratio) / posi_ratio
 
     def _build_basic_stream(self, data_set):
         stream = UrlDataFlow(data_set)
@@ -129,6 +133,9 @@ class DataManager(object):
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size)
+        
+        imbalance_ratio = self._imbalance_ratio(data_set)
+        stream = MapData(stream, lambda dp: dp + [imbalance_ratio])
         return stream
 
     def _encode_labels(self, labels):

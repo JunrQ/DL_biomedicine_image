@@ -134,25 +134,55 @@ class RNN(ModelDesc):
         """
         return [InputDesc(tf.float32, [None, self.config.max_sequence_length, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
-                InputDesc(tf.int32, [None, self.config.annotation_number], 'label')]
+                InputDesc(tf.int32, [None, self.config.annotation_number], 'label'),
+                InputDesc(tf.float32, [self.config.annotation_number], 'scale')]
+    
+    def _homo_loss(self, logits, labels):
+        loss = tf.losses.sigmoid_cross_entropy(labels, logits,
+                                               reduction=tf.losses.Reduction.MEAN, scope='loss')
+        return loss
+    
+    def _weighted_loss(self, logits, labels, ratio):
+        """ Scale loss per-label by weights
+        
+        Args:
+            logits: [N, C].
+            labels: [N, C].
+            positive_scale: [C].
+        Return:
+            loss: Reduce by weighted sum.
+        """
+        N = tf.shape(logits)[0]
+        C = self.config.annotation_number
 
+        ratio = tf.reshape(ratio, [1, C])
+        expanded_ratio = tf.tile(ratio, [N, 1], name='expand_imbalace_ratio')
+        identity = tf.cast(1 - labels, tf.float32)
+        scaled = expanded_ratio * tf.cast(labels, tf.float32)
+        weights = identity + scaled
+        loss = tf.losses.sigmoid_cross_entropy(labels, logits, weights=weights,
+                                               reduction=tf.losses.Reduction.MEAN, scope='loss')
+        return loss
+        
     def _build_graph(self, inputs):
         """ Required by the base class.
         """
-        image, length, label = inputs
+        image, length, label, scale = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature(image, ctx.is_training, self.config.weight_decay)
+        dropout_keep_prob = self.config.dropout_keep_prob if ctx.is_training else 1.0
 
         with tf.variable_scope('rnn'):
             rnn_cell = MemCell(feature, length, self.config.weight_decay, self.config.max_sequence_length)
+            dropout_cell = tf.contrib.rnn.DropoutWrapper(rnn_cell, state_keep_prob=dropout_keep_prob)
             # the content of input sequence for the lstm cell is irrelevant, but we need its length
             # information to deduce read_time
             dummy_input = [tf.zeros([N, 1])] * self.config.read_time
             initial_state = self._calcu_glimpse(
                 feature, length) if self.config.use_glimpse else None
             _, final_encoding = tf.nn.static_rnn(
-                rnn_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+                dropout_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
 
         #final_encoding = tf.nn.dropout(final_encoding, self.config.drop_out_keep, name='dropout')
         logits = slim.fully_connected(final_encoding, self.config.annotation_number, activation_fn=None,
@@ -161,14 +191,13 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
-        loss = tf.losses.sigmoid_cross_entropy(label, logits,
-                                               reduction=tf.losses.Reduction.MEAN, scope='loss')
+        loss = self._weighted_loss(logits, label, scale)
         add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
         # training metric
         auc, _ = tf.metrics.auc(label, tf.sigmoid(logits), updates_collections=[tf.GraphKeys.UPDATE_OPS])
-        tf.summary.scalar(auc)
+        tf.summary.scalar('training_auc', auc)
         self.cost = loss
 
     def _calcu_glimpse(self, feature, length):

@@ -101,7 +101,7 @@ class SeparationScheme(object):
         # relax the percentage restriction to percentage + tolerance_margin
         reversed_map = self._reverse_annot_map(table)
         # repeat (fixed point algorithm)
-        for _ in range(0, len(reversed_map)):
+        for _ in range(0, 1):
             for annot in reversed_map.keys():
                 covered_num, total_num = annot_stat_dict[annot]
                 # already collected enough samples
