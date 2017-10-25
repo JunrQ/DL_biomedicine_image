@@ -185,12 +185,17 @@ class SeparationScheme(object):
                 annot_remain.set_index(['gene', 'stage']))
 
     def _extract_vocabulary(self, annot_table, keep_number):
+        """ **Extract all labels when keep_number is None**.
+        """
         unrolled = seq(annot_table.annotation) \
             .flat_map(lambda annots: annots) \
             .list()
         unrolled = pd.Series(unrolled)
-        vocab = unrolled.value_counts().nlargest(keep_number).index.values
 
+        if keep_number is None:
+            vocab = unrolled.values
+        else:
+            vocab = unrolled.value_counts().nlargest(keep_number).index.values
         return vocab
 
     def _drop_annot(self, annots, vocab):

@@ -41,24 +41,55 @@ class DataManager(object):
     """ Complete data pipeline.
     """
 
-    def __init__(self, config):
-        self.config = config
-
-        image_table = load_image_table(config.image_table_location)
-        annot_table = load_annot_table(config.annotation_table_location)
+    def __init__(self, image_table, annot_table, config):
         sep_scheme = SeparationScheme(config)
-        separated, vocabulary, num_info = sep_scheme.separate(image_table, annot_table)
+        separated, vocabulary, num_info = sep_scheme.separate(
+            image_table, annot_table)
+        self.config = config
         self.binarizer = MultiLabelBinarizer(classes=vocabulary)
         self.dataset_num_info = num_info
-        train_set = separated.train
-        val_set = separated.validation
-        test_set = separated.test
-        train_set.annotation = self._encode_labels(train_set.annotation)
-        val_set.annotation = self._encode_labels(val_set.annotation)
-        test_set.annotation = self._encode_labels(test_set.annotation)
-        self.train_set = train_set
-        self.val_set = val_set
-        self.test_set = test_set
+        self.train_set = separated.train
+        self.val_set = separated.validation
+        self.test_set = separated.test
+
+    @classmethod
+    def from_config(cls, config):
+        """ Construct DataManager solely from config.
+
+        The image table and annotation table are obtained from the csv files specified in config.
+        """
+        image_table = load_image_table(config.image_table_location)
+        annot_table = load_annot_table(config.annotation_table_location)
+        return cls(image_table, annot_table, config)
+
+    @classmethod
+    def from_dataset(cls, dataset, config):
+        """ Construct DataManager from a dataset.
+
+        This is used for subdividing a data set.
+
+        Args:
+            dataset (pandas.DataFrame): It must has two columns: image_url and annotation.
+
+        """
+        image_table = pd.DataFrame(dataset.image_url)
+        annot_table = pd.DataFrame(dataset.annotation)
+        return cls(image_table, annot_table, config)
+
+    def get_train_set(self):
+        """ Get train set as pandas DataFrame
+        """
+        return self.train_set
+
+    def get_validation_set(self):
+        """ Get validation set as pandas DataFrame
+        """
+        return self.val_set
+
+    def get_test_set(self):
+        """ Get test set as pandas DataFrame
+        """
+        return self.test_set
 
     def get_train_stream(self):
         """ Data stream for training.
@@ -94,7 +125,7 @@ class DataManager(object):
         df['val'] = self._imbalance_ratio(self.val_set)
         df['test'] = self._imbalance_ratio(self.test_set)
         return df
-    
+
     def get_num_info(self):
         return self.dataset_num_info
 
@@ -106,11 +137,13 @@ class DataManager(object):
         return self.binarizer.inverse_transform(encoding)
 
     def _imbalance_ratio(self, data_set):
-        labels = np.array(data_set.annotation.values)
-        posi_ratio = np.sum(labels, axis=0) / labels.shape[0]
+        binary_annot = self._encode_labels(data_set.annotation)
+        binary_annot = np.array(binary_annot)
+        posi_ratio = np.sum(binary_annot, axis=0) / binary_annot.shape[0]
         return (1 - posi_ratio) / posi_ratio
 
     def _build_basic_stream(self, data_set):
+        data_set.annotation = self._encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
 
         # trim image sequence to max length, also shuffle squence
@@ -133,7 +166,7 @@ class DataManager(object):
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size)
-        
+
         imbalance_ratio = self._imbalance_ratio(data_set)
         stream = MapData(stream, lambda dp: dp + [imbalance_ratio])
         return stream

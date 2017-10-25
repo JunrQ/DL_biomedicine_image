@@ -63,7 +63,7 @@ def run_for_dataset(config, log_dir):
     print(f"Annotation number: {config.annotation_number}")
 
     config.proportion = {'train': 0.55, 'val': 0.0, 'test': 0.45}
-    data_manager = DataManager(config)
+    data_manager = DataManager.from_config(config)
     log_obj['set_size'] = data_manager.get_num_info()
     train_data = data_manager.get_train_stream()
     test_data = data_manager.get_test_stream()
