@@ -247,6 +247,8 @@ class RNN(ModelDesc):
         return tf.pad(feature, paddings, name='zero_pad_input')
 
     def _get_optimizer(self):
+        """ Required by base class ModelDesc.
+        """
         lr = tf.get_variable('learning_rate', shape=(),
                              dtype=tf.float32, trainable=False)
         tf.summary.scalar('learning_rate-summary', lr)
