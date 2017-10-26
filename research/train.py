@@ -79,7 +79,7 @@ def run_for_dataset(config, log_dir):
                                ],
                                session_init=SaverRestore(
                                    model_path=RESNET_LOC, ignore=ignore_restore),
-                               max_epoch=1, nr_tower=2)
+                               max_epoch=18, nr_tower=2)
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()

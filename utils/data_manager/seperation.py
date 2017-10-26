@@ -62,7 +62,7 @@ class SeparationScheme(object):
 
     def _log_separation(self, train_set, val_set, test_set):
         img_nums = seq((train_set, val_set, test_set)) \
-            .map(self._unroll) \
+            .map(lambda s: self._unroll(s.image_url)) \
             .map(len) \
             .list()
 
@@ -162,6 +162,9 @@ class SeparationScheme(object):
         return statistic
 
     def _extract_directions(self, image_table, annot_table, directions):
+        if 'direction' not in image_table.columns:
+            return image_table, annot_table
+        
         image_remain = image_table[image_table.direction.isin(directions)]
         grouped = image_remain.groupby(['gene', 'stage'])
         merged = grouped.image_url.agg(
@@ -187,13 +190,9 @@ class SeparationScheme(object):
     def _extract_vocabulary(self, annot_table, keep_number):
         """ **Extract all labels when keep_number is None**.
         """
-        unrolled = seq(annot_table.annotation) \
-            .flat_map(lambda annots: annots) \
-            .list()
-        unrolled = pd.Series(unrolled)
-
+        unrolled = pd.Series(self._unroll(annot_table.annotation))
         if keep_number is None:
-            vocab = unrolled.values
+            vocab = unrolled.unique()
         else:
             vocab = unrolled.value_counts().nlargest(keep_number).index.values
         return vocab

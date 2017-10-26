@@ -120,7 +120,7 @@ class DataManager(object):
     def get_imbalance_ratio(self):
         """ Get the ratio of imbalance of each label.
         """
-        df = pd.DataFrame(index=self.binarizer.classes_)
+        df = pd.DataFrame(index=self.binarizer.classes)
         df['train'] = self._imbalance_ratio(self.train_set)
         df['val'] = self._imbalance_ratio(self.val_set)
         df['test'] = self._imbalance_ratio(self.test_set)
@@ -143,6 +143,8 @@ class DataManager(object):
         return (1 - posi_ratio) / posi_ratio
 
     def _build_basic_stream(self, data_set):
+        imbalance_ratio = self._imbalance_ratio(data_set)
+        data_set = data_set.copy(deep=True)
         data_set.annotation = self._encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
 
@@ -167,7 +169,6 @@ class DataManager(object):
                                   lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size)
 
-        imbalance_ratio = self._imbalance_ratio(data_set)
         stream = MapData(stream, lambda dp: dp + [imbalance_ratio])
         return stream
 

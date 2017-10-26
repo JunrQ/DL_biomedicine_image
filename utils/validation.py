@@ -117,7 +117,7 @@ class Accumulator(object):
         return ret
 
 
-class AggerateMetric(Inferencer):
+class AggregateMetric(Inferencer):
     """ Calculate mAP, AUC and loss metrics using validation set.
     """
 

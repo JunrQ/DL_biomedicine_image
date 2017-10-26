@@ -11,7 +11,6 @@ import tensorflow.contrib.slim as slim
 from tensorpack import (ModelDesc, InputDesc, get_current_tower_context)
 from tensorpack.tfutils.summary import add_moving_summary
 
-
 class MemCell(tf.contrib.rnn.RNNCell):
     """ LSTM cell with memory.
     """
@@ -81,6 +80,10 @@ class MemCell(tf.contrib.rnn.RNNCell):
         read = tf.reduce_sum(weighted, axis=1, keep_dims=False)
         return read
     
+    def _stable_exp(self, logits):
+        sub = tf.reduce_max(logits, axis=1, keep_dims=True, name='max_logits')
+        return tf.exp(logits - sub, name='exp_logits')
+    
     def _calcu_attention(self, logits):
         exp_logits = self._stable_exp(logits)
         mask = tf.sequence_mask(self.length, self._mem_size)
@@ -100,10 +103,6 @@ class MemCell(tf.contrib.rnn.RNNCell):
         att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
         return att
     
-    def _stable_exp(self, logits):
-        sub = tf.reduce_max(logits, axis=1, keep_dims=True, name='max_att_logits')
-        return tf.exp(logits - sub, name='exp_att_logits')
-
     @property
     def state_size(self):
         """ Required by the base class. 
@@ -119,7 +118,7 @@ class RNN(ModelDesc):
     """ RNN model for image sequence annotation.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, is_finetuning=False):
         """
         Args:
             read_time: How many times should the lstm run.
@@ -128,6 +127,7 @@ class RNN(ModelDesc):
         """
         self.config = config
         self.cost = None
+        self.is_finetuning = is_finetuning
 
     def _get_inputs(self):
         """ Required by the base class.
@@ -142,13 +142,25 @@ class RNN(ModelDesc):
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         return loss
     
+    def _focal_loss(self, logits, labels, ratio):
+        """ Focal loss. arxiv:1708:02002
+        """
+        pass
+        p_t = tf.sigmoid(logits)
+        loss_posi = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
+        p_t = 1.0 - p_t
+        loss_nega = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
+        mask = tf.cast(labels, tf.float32)
+        loss = loss_posi * mask + loss_nega * (1 - mask)
+        return tf.reduce_mean(loss, axis=[0, 1], keep_dims=False)
+    
     def _weighted_loss(self, logits, labels, ratio):
         """ Scale loss per-label by weights
         
         Args:
             logits: [N, C].
             labels: [N, C].
-            positive_scale: [C].
+            ratio: [C].
         Return:
             loss: Reduce by weighted sum.
         """
@@ -174,15 +186,16 @@ class RNN(ModelDesc):
         dropout_keep_prob = self.config.dropout_keep_prob if ctx.is_training else 1.0
 
         with tf.variable_scope('rnn'):
-            rnn_cell = MemCell(feature, length, self.config.weight_decay, self.config.max_sequence_length)
-            dropout_cell = tf.contrib.rnn.DropoutWrapper(rnn_cell, state_keep_prob=dropout_keep_prob)
-            # the content of input sequence for the lstm cell is irrelevant, but we need its length
-            # information to deduce read_time
-            dummy_input = [tf.zeros([N, 1])] * self.config.read_time
-            initial_state = self._calcu_glimpse(
-                feature, length) if self.config.use_glimpse else None
-            _, final_encoding = tf.nn.static_rnn(
-                dropout_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+            with slim.arg_scope([slim.fully_connected], trainable=not self.is_finetuning):
+                rnn_cell = MemCell(feature, length, self.config.weight_decay, self.config.max_sequence_length)
+                dropout_cell = tf.contrib.rnn.DropoutWrapper(rnn_cell, state_keep_prob=dropout_keep_prob)
+                # the content of input sequence for the lstm cell is irrelevant, but we need its length
+                # information to deduce read_time
+                dummy_input = [tf.zeros([N, 1])] * self.config.read_time
+                initial_state = self._calcu_glimpse(
+                    feature, length) if self.config.use_glimpse else None
+                _, final_encoding = tf.nn.static_rnn(
+                    dropout_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
 
         #final_encoding = tf.nn.dropout(final_encoding, self.config.drop_out_keep, name='dropout')
         logits = slim.fully_connected(final_encoding, self.config.annotation_number, activation_fn=None,
@@ -191,7 +204,7 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
-        loss = self._weighted_loss(logits, label, scale)
+        loss = self._focal_loss(logits, label, scale)
         add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
