@@ -108,7 +108,7 @@ class DataManager(object):
         """
         stream = self._build_basic_stream(self.val_set)
         # validation set is small, so we cache it
-        stream = CacheData(stream)
+        # stream = CacheData(stream)
         return stream
 
     def get_test_stream(self):

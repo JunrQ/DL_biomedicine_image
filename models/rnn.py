@@ -5,7 +5,7 @@
         Order Matters: Sequence to sequence for sets. arXiv:1511.06391
 """
 
-from .image_utils import extract_feature
+from .image_utils import extract_feature_resnet
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
 from tensorpack import (ModelDesc, InputDesc, get_current_tower_context)
@@ -152,7 +152,7 @@ class RNN(ModelDesc):
         loss_nega = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
         mask = tf.cast(labels, tf.float32)
         loss = loss_posi * mask + loss_nega * (1 - mask)
-        return tf.reduce_mean(loss, axis=[0, 1], keep_dims=False)
+        return tf.reduce_mean(loss, axis=[0, 1], keep_dims=False, name='loss/value')
     
     def _weighted_loss(self, logits, labels, ratio):
         """ Scale loss per-label by weights
@@ -182,7 +182,7 @@ class RNN(ModelDesc):
         image, length, label, scale = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
-        feature = extract_feature(image, ctx.is_training, self.config.weight_decay)
+        feature = extract_feature_resnet(image, ctx.is_training, self.config.weight_decay)
         dropout_keep_prob = self.config.dropout_keep_prob if ctx.is_training else 1.0
 
         with tf.variable_scope('rnn'):

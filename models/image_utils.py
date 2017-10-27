@@ -1,10 +1,10 @@
 """ Extract feature from images.
 """
 
-
+import re
 import tensorflow as tf
 import tensorflow.contrib.slim as slim
-from .nets import (inception_resnet_v2, resnet_v2_101, resnet_arg_scope)
+from .nets import (inception_resnet_v2, resnet_v2_101, resnet_arg_scope, vgg_16)
 
 
 def image_preprocess(image):
@@ -22,7 +22,7 @@ def image_preprocess(image):
         return image
 
 
-def extract_feature(images, is_training, weight_decay):
+def extract_feature_resnet(images, is_training, weight_decay):
     """ Extract feature from image set.
 
     Args:
@@ -67,3 +67,45 @@ def extract_feature(images, is_training, weight_decay):
     _, F = avg.get_shape().as_list()
     recover_ts = tf.reshape(avg, [-1, T, F], name='recover_timestep')
     return recover_ts
+
+
+def partial_match_tensor_name(tensor_dict, name):
+    for key, value in tensor_dict.items():
+        p = re.compile(name)
+        if p.search(key):
+            return value
+        
+    raise KeyError(f"Can not find any tensor with {name}")
+
+def extract_feature_vgg(images,
+                        is_training,
+                        weight_decay=0.00004,
+                        output_layer='conv4/conv4_3',
+                        trainable=False,
+                        stddev=0.1):
+    """
+    """
+    if trainable:
+        weights_regularizer = tf.contrib.layers.l2_regularizer(weight_decay)
+    else:
+        weights_regularizer = None
+    
+    images = image_preprocess(images)
+    with slim.arg_scope(
+        [slim.conv2d, slim.fully_connected],
+        weights_regularizer=weights_regularizer,
+            trainable=trainable):
+        with slim.arg_scope([slim.conv2d, slim.fully_connected],
+                            activation_fn=tf.nn.relu,
+                            weights_initializer=tf.truncated_normal_initializer(
+                                stddev=stddev),
+                            biases_initializer=tf.zeros_initializer()):
+            with slim.arg_scope([slim.conv2d], padding='SAME'):
+                net, end_points = vgg_16(
+                    images, is_training=is_training, scope='vgg_16')
+
+                output = partial_match_tensor_name(end_points, output_layer)
+
+    _, H, W, C = output.get_shape().as_list()
+    
+    return output
