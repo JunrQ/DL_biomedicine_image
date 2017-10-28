@@ -5,11 +5,12 @@ sys.path.append(os.path.join(sys.path[0], '..'))
 from config.rnn import default as default_config
 from models import RNN
 from utils import DataManager
-from utils.validation import (Accumulator, AggerateMetric, calcu_metrics)
+from utils.validation import (Accumulator, AggregateMetric, calcu_metrics)
 
 
 from functional import seq
 import json
+from multiprocessing import Process, Pipe
 from pathlib import Path
 import pickle
 from tqdm import tqdm
@@ -22,8 +23,8 @@ from tensorpack.callbacks import (
 from tensorpack.tfutils.common import get_default_sess_config
 from tensorpack.tfutils.sesscreate import ReuseSessionCreator
 
-RESNET_LOC = "../data/resnet_v2_101/resnet_v2_101.ckpt"
-MAIN_LOG_LOC = "./log/"
+TRANSFER_LOC = "./transfer_log/all-stages-max-micro-auc.tfmodel"
+MAIN_LOG_LOC = "./transfer_log/"
 PROGRESS_FILE = "progress.pickle"
 METRICS_FILE = "metrics.json"
 
@@ -50,9 +51,10 @@ DATA_SETS = {
 }
 
 
-def run_for_dataset(config, log_dir):
+def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     logger.set_logger_dir(log_dir, action='d')
-    ignore_restore = ['learning_rate', 'global_step']
+    ignore_restore = ['learning_rate', 'global_step', 'logits/weights', 'logits/biases', 
+                      'hidden_fc/weights', 'hidden_fc/biases']
     save_name = "rnn-max-micro_auc.tfmodel"
     threshold = 0.5
 
@@ -62,12 +64,16 @@ def run_for_dataset(config, log_dir):
     print(f"Stage: {config.stages}")
     print(f"Annotation number: {config.annotation_number}")
 
-    config.proportion = {'train': 0.55, 'val': 0.0, 'test': 0.45}
-    data_manager = DataManager.from_config(config)
-    log_obj['set_size'] = data_manager.get_num_info()
-    train_data = data_manager.get_train_stream()
-    test_data = data_manager.get_test_stream()
-    model = RNN(config)
+    config.proportion = {'train': 1.0, 'val': 0.0, 'test': 0.0}
+    train_dm = DataManager.from_dataset(train_set, config)
+    # FIXME: currently, train and val can not both be zero.
+    config.proportion = {'train': 0.0, 'val': 1.0, 'test': 0.0}
+    test_dm = DataManager.from_dataset(test_set, config)
+    log_obj['train_size'] = train_dm.get_num_info()['train']
+    log_obj['test_size'] = test_dm.get_num_info()['val']
+    train_data = train_dm.get_train_stream()
+    test_data = test_dm.get_validation_stream()
+    model = RNN(config, is_finetuning=True)
 
     tf.reset_default_graph()
     train_config = TrainConfig(model=model, dataflow=train_data,
@@ -78,7 +84,7 @@ def run_for_dataset(config, log_dir):
                                    MaxSaver('training_auc', save_name),
                                ],
                                session_init=SaverRestore(
-                                   model_path=RESNET_LOC, ignore=ignore_restore),
+                                   model_path=TRANSFER_LOC, ignore=ignore_restore),
                                max_epoch=18, nr_tower=2)
     trainer = Trainer(train_config)
     trainer.train()
@@ -101,10 +107,11 @@ def run_for_dataset(config, log_dir):
     print(f"Test metrics: {metrics}")
     log_obj['metrics'] = metrics
 
-    return log_obj
+    pipe.send(log_obj)
+    pipe.close()
 
 
-def dummy_run_for_dataset(config, _logdir):
+def dummy_run_for_dataset(config, _logdir, pipe):
     from time import sleep
 
     log_obj = {}
@@ -117,9 +124,10 @@ def dummy_run_for_dataset(config, _logdir):
     metrics = {'macro_auc': 0.9222, "micro_f1": 0.6032}
     print(f"Test metrics: {metrics}")
     log_obj['metrics'] = metrics
-    return log_obj
+    pipe.send(log_obj)
+    pipe.close()
 
-
+    
 def update_metrics_collection(metrics):
     collection = None
     file_name = MAIN_LOG_LOC + METRICS_FILE
@@ -142,20 +150,38 @@ def run():
     else:
         with open(file_name, 'rb') as f:
             progress = pickle.load(f)
+            
+    config = default_config
+    config.use_hidden_dense = True
+    config.dropout_keep_prob = 0.5
+    config.weight_decay = 0.0
+    config.stages = [2, 3, 4, 5, 6]
+    config.proportion = {'train': 0.55, 'val': 0.0, 'test': 0.45}
+    config.annotation_number = None
+    dm = DataManager.from_config(config)
+    train_set = dm.get_train_set()
+    test_set = dm.get_test_set()
 
     for set_name, (stage, annot_num) in tqdm(DATA_SETS.items()):
         # this data set has already been tested.
         if set_name in progress:
             continue
-
-        config = default_config
+            
+        # config.weight_decay = 5e-4
         config.stages = [stage]
         config.annotation_number = annot_num
         log_dir = MAIN_LOG_LOC + set_name + '/'
-        metrics = run_for_dataset(config, log_dir)
-
-        progress.add(set_name)
+        
+        # build process
+        receiver, sender = Pipe(duplex=False)
+        child = Process(target=run_for_dataset, args=(config, train_set, test_set, log_dir, sender))
+        child.start()
+        child.join()
+        metrics = receiver.recv()
+        receiver.close()
         update_metrics_collection(metrics)
+        
+        progress.add(set_name)
         with open(file_name, 'wb') as f:
             pickle.dump(progress, f)
 

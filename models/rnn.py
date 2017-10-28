@@ -145,7 +145,6 @@ class RNN(ModelDesc):
     def _focal_loss(self, logits, labels, ratio):
         """ Focal loss. arxiv:1708:02002
         """
-        pass
         p_t = tf.sigmoid(logits)
         loss_posi = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
         p_t = 1.0 - p_t
@@ -182,7 +181,7 @@ class RNN(ModelDesc):
         image, length, label, scale = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
-        feature = extract_feature_resnet(image, ctx.is_training, self.config.weight_decay)
+        feature = extract_feature_resnet(image, ctx.is_training, self.is_finetuning, self.config.weight_decay)
         dropout_keep_prob = self.config.dropout_keep_prob if ctx.is_training else 1.0
 
         with tf.variable_scope('rnn'):
@@ -196,6 +195,12 @@ class RNN(ModelDesc):
                     feature, length) if self.config.use_glimpse else None
                 _, final_encoding = tf.nn.static_rnn(
                     dropout_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+                
+        if self.config.use_hidden_dense:
+            _, F = final_encoding.get_shape().as_list()
+            final_encoding = slim.fully_connected(final_encoding, F,
+                                                  weights_regularizer=slim.l2_regularizer(self.config.weight_decay),
+                                                  scope='hidden_fc')
 
         #final_encoding = tf.nn.dropout(final_encoding, self.config.drop_out_keep, name='dropout')
         logits = slim.fully_connected(final_encoding, self.config.annotation_number, activation_fn=None,

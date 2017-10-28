@@ -9,7 +9,7 @@ class ModelConfig(object):
                  adaption_layer_strides=[(1, 1), (1, 1), (1, 1)],
                  weight_decay=1e-5,
                  plus_global_feature=True,
-                 net_global_dim=[2, 128],
+                 net_global_dim=[64, 128],
                  net_max_features_nums=512,
                  adaption_fc_layers_num=None,
                  adaption_fc_filters=None,

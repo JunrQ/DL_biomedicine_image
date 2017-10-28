@@ -21,6 +21,7 @@ default.validation_metrics = ['mean_average_precision', 'macro_auc', 'micro_auc'
                               'macro_f1', 'micro_f1', 'ranking_mean_average_precision',
                               'coverage', 'ranking_loss', 'one_error']
 default.use_glimpse = True
+default.use_hidden_dense = False
 default.read_time = 5
 default.weight_decay = 0.0
 default.dropout_keep_prob = 0.5
