@@ -55,7 +55,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     logger.set_logger_dir(log_dir, action='d')
     ignore_restore = ['learning_rate', 'global_step', 'logits/weights', 'logits/biases', 
                       'hidden_fc/weights', 'hidden_fc/biases']
-    save_name = "rnn-max-micro_auc.tfmodel"
+    save_name = "max-training-auc.tfmodel"
     threshold = 0.5
 
     log_obj = {}
@@ -69,6 +69,10 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     # FIXME: currently, train and val can not both be zero.
     config.proportion = {'train': 0.0, 'val': 1.0, 'test': 0.0}
     test_dm = DataManager.from_dataset(test_set, config)
+    
+    assert set(train_dm.binarizer.classes) == set(test_dm.binarizer.classes), \
+        "train set and test have different labels."
+        
     log_obj['train_size'] = train_dm.get_num_info()['train']
     log_obj['test_size'] = test_dm.get_num_info()['val']
     train_data = train_dm.get_train_stream()
@@ -79,13 +83,13 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     train_config = TrainConfig(model=model, dataflow=train_data,
                                callbacks=[
                                    ScheduledHyperParamSetter(
-                                       'learning_rate', [(0, 1e-4), (18, 1e-5)]),
+                                       'learning_rate', [(0, 1e-4), (15, 1e-5)]),
                                    ModelSaver(),
                                    MaxSaver('training_auc', save_name),
                                ],
                                session_init=SaverRestore(
                                    model_path=TRANSFER_LOC, ignore=ignore_restore),
-                               max_epoch=18, nr_tower=2)
+                               max_epoch=20, nr_tower=2)
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()
