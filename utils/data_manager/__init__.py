@@ -15,7 +15,6 @@ from sklearn.preprocessing import MultiLabelBinarizer
 from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
                                  MapDataComponent, ThreadedMapData, PrefetchDataZMQ)
 
-
 class UrlDataFlow(DataFlow):
     """ Entry point of data pipeline.
     """
@@ -40,17 +39,13 @@ class UrlDataFlow(DataFlow):
 class DataManager(object):
     """ Complete data pipeline.
     """
-
-    def __init__(self, image_table, annot_table, config):
-        sep_scheme = SeparationScheme(config)
-        separated, vocabulary, num_info = sep_scheme.separate(
-            image_table, annot_table)
+    
+    def __init__(self, train_set, val_set, test_set, vocab, config):
+        self.train_set = train_set
+        self.val_set = val_set
+        self.test_set = test_set
+        self.binarizer = MultiLabelBinarizer(classes=vocab)
         self.config = config
-        self.binarizer = MultiLabelBinarizer(classes=vocabulary)
-        self.dataset_num_info = num_info
-        self.train_set = separated.train
-        self.val_set = separated.validation
-        self.test_set = separated.test
 
     @classmethod
     def from_config(cls, config):
@@ -60,21 +55,36 @@ class DataManager(object):
         """
         image_table = load_image_table(config.image_table_location)
         annot_table = load_annot_table(config.annotation_table_location)
-        return cls(image_table, annot_table, config)
+        vocab = _extract_top_vocab(annot_table.annotation, config.annotation_number)
+        scheme = SeparationScheme(config, vocab)
+        sep = scheme.separate(image_table, annot_table)
+        return cls(sep.train, sep.validation, sep.test, vocab, config)
 
     @classmethod
-    def from_dataset(cls, dataset, config):
-        """ Construct DataManager from a dataset.
-
-        This is used for subdividing a data set.
-
-        Args:
-            dataset (pandas.DataFrame): It must has two columns: image_url and annotation.
-
+    def from_dataset(cls, train_set, test_set, config):
+        """ Construct DataManager from train set and test set.
+        
+        The train set can be further subdivided into a smaller train set and validation set.
+        The proportion of the subdivision is specified by the `proportion` field in `config`.
         """
-        image_table = pd.DataFrame(dataset.image_url)
-        annot_table = pd.DataFrame(dataset.annotation)
-        return cls(image_table, annot_table, config)
+        vocab = _extract_common_top_vocab(train_set.annotation, test_set.annotation, 
+                                          config.annotation_number)
+        assert config.proportion['test'] == 0, \
+            "Subdivision will not perform on test set, please make sure test proportion is zero"
+            
+        scheme = SeparationScheme(config, vocab)
+        image_table = pd.DataFrame(train_set.image_url)
+        annot_table = pd.DataFrame(train_set.annotation)
+        train_sep = scheme.separate(image_table, annot_table)
+        
+        config.proportion = {'train': 0.0, 'val': 0.0, 'test': 1.0}
+        scheme = SeparationScheme(config, vocab)
+        image_table = pd.DataFrame(test_set.image_url)
+        annot_table = pd.DataFrame(test_set.annotation)
+        # still need to filter test set
+        test_sep = scheme.separate(image_table, annot_table)
+        
+        return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
 
     def get_train_set(self):
         """ Get train set as pandas DataFrame
@@ -127,7 +137,14 @@ class DataManager(object):
         return df
 
     def get_num_info(self):
-        return self.dataset_num_info
+        img_nums = seq((self.train_set, self.val_set, self.test_set)) \
+            .map(lambda s: seq(s.image_url).flat_map(lambda l: l).list()) \
+            .map(len) \
+            .list()
+            
+        return {'train': (len(self.train_set), img_nums[0]), 
+                'val': (len(self.val_set), img_nums[1]),
+                'test': (len(self.test_set), img_nums[2]) }
 
     def recover_label(self, encoding):
         """ Turn one-hot encoding back to string labels.
@@ -176,6 +193,30 @@ class DataManager(object):
         mat = self.binarizer.fit_transform(labels)
         return list(iter(mat))
 
+    
+def _extract_top_vocab(annots, num):
+    all_words = pd.Series(seq(annots).flat_map(lambda l: l).list())
+    if num is None:
+        vocab = all_words.unique()
+    else:
+        vocab = all_words.value_counts().nlargest(num).index.values
+    return vocab
+
+
+def _extract_common_top_vocab(annots_one, annots_two, num):
+    fuse = 0
+    while True:
+        vocab_one = set(_extract_top_vocab(annots_one, num))
+        vocab_two = set(_extract_top_vocab(annots_two, num))
+        common = vocab_one.intersection(vocab_two)
+        if len(common) >= num:
+            return seq(common).take(num).list()
+        num += 1
+        fuse += 1
+        if fuse >= 5:
+            raise ValueError(f"After {fuse} times operation "
+                             "still can not find enough common labels.")
+        
 
 def _load_image(url_list, img_dir, img_size):
     imgs = seq(url_list) \

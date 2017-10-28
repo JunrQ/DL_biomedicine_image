@@ -12,13 +12,16 @@ class SeparationScheme(object):
     """ Separate data set into train, validation, and test set.
     """
 
-    def __init__(self, config):
+    def __init__(self, config, vocab):
+        """ This method is reserved for internal use. Please use `with_config` or 
+        `with_vocabulary` for initiating.
+        """
         self.stages = config.stages
         self.directions = config.directions
-        self.annotation_threshold = config.annotation_number
         self.proportion = config.proportion
         self.tolerance_margin = config.tolerance_margin
         self.shuffle = config.shuffle_separation
+        self.vocab = vocab
 
     def separate(self, image_table, annot_table):
         """ Separate data set into train, validation and test set.
@@ -41,7 +44,7 @@ class SeparationScheme(object):
 
         DataSep = namedtuple('DataSep', ['train', 'validation', 'test'])
 
-        image_table, annot_table, vocab = self._shrink_data_set(
+        image_table, annot_table = self._shrink_data_set(
             image_table, annot_table)
 
         merged_table = self._merge_image_and_annot(image_table, annot_table)
@@ -52,13 +55,18 @@ class SeparationScheme(object):
         test_set, remain = self._seperate_one_part(
             merged_table, self.proportion['test'], self.tolerance_margin)
         # rebalance proportion
-        train_proportion = self.proportion['train'] / \
-            (self.proportion['train'] + self.proportion['val'])
+        # avoid divide-by-zero error
+        if self.proportion['train'] + self.proportion['val'] == 0:
+            train_proportion = 0.0
+        else:
+            train_proportion = self.proportion['train'] / \
+                (self.proportion['train'] + self.proportion['val'])
+                
         train_set, remain = self._seperate_one_part(
             remain, train_proportion, self.tolerance_margin)
 
-        info = self._log_separation(train_set, remain, test_set)
-        return DataSep(train=train_set, validation=remain, test=test_set), vocab, info
+        self._log_separation(train_set, remain, test_set)
+        return DataSep(train=train_set, validation=remain, test=test_set)
 
     def _log_separation(self, train_set, val_set, test_set):
         img_nums = seq((train_set, val_set, test_set)) \
@@ -72,9 +80,6 @@ class SeparationScheme(object):
         print("Image numbers:")
         print(
             f"train: {img_nums[0]}, validation: {img_nums[1]}, test: {img_nums[2]}")
-
-        return {'train': (len(train_set), img_nums[0]), 'val': (len(val_set), img_nums[1]),
-                'test': (len(test_set), img_nums[2])}
 
     def _seperate_one_part(self, table, percentage, tolerance_margin):
         annot_stat_dict = self._build_annot_statistic(table)
@@ -187,16 +192,6 @@ class SeparationScheme(object):
         return (image_remain.set_index(['gene', 'stage']),
                 annot_remain.set_index(['gene', 'stage']))
 
-    def _extract_vocabulary(self, annot_table, keep_number):
-        """ **Extract all labels when keep_number is None**.
-        """
-        unrolled = pd.Series(self._unroll(annot_table.annotation))
-        if keep_number is None:
-            vocab = unrolled.unique()
-        else:
-            vocab = unrolled.value_counts().nlargest(keep_number).index.values
-        return vocab
-
     def _drop_annot(self, annots, vocab):
         return tuple(seq(annots).filter(lambda a: a in set(vocab)).list())
 
@@ -207,14 +202,12 @@ class SeparationScheme(object):
         image_table, annot_table = self._extract_directions(
             image_table, annot_table, self.directions)
 
-        vocab = self._extract_vocabulary(
-            annot_table, self.annotation_threshold)
         annot_table.annotation = annot_table.annotation.apply(
-            lambda annots: self._drop_annot(annots, vocab))
+            lambda annots: self._drop_annot(annots, self.vocab))
 
         drop_empty_mask = annot_table.annotation.apply(
             lambda annots: len(annots) > 0)
         dropped_annot = annot_table[drop_empty_mask]
         dropped_image = image_table.loc[dropped_annot.index.values]
 
-        return dropped_image, dropped_annot, vocab
+        return dropped_image, dropped_annot

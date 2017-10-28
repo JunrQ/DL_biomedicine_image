@@ -23,8 +23,8 @@ from tensorpack.callbacks import (
 from tensorpack.tfutils.common import get_default_sess_config
 from tensorpack.tfutils.sesscreate import ReuseSessionCreator
 
-TRANSFER_LOC = "./transfer_log/all-stages-max-micro-auc.tfmodel"
-MAIN_LOG_LOC = "./transfer_log/"
+TRANSFER_LOC = "./log/all-stages-max-micro-auc.tfmodel"
+MAIN_LOG_LOC = "./log/"
 PROGRESS_FILE = "progress.pickle"
 METRICS_FILE = "metrics.json"
 
@@ -65,18 +65,12 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     print(f"Annotation number: {config.annotation_number}")
 
     config.proportion = {'train': 1.0, 'val': 0.0, 'test': 0.0}
-    train_dm = DataManager.from_dataset(train_set, config)
-    # FIXME: currently, train and val can not both be zero.
-    config.proportion = {'train': 0.0, 'val': 1.0, 'test': 0.0}
-    test_dm = DataManager.from_dataset(test_set, config)
-    
-    assert set(train_dm.binarizer.classes) == set(test_dm.binarizer.classes), \
-        "train set and test have different labels."
-        
-    log_obj['train_size'] = train_dm.get_num_info()['train']
-    log_obj['test_size'] = test_dm.get_num_info()['val']
-    train_data = train_dm.get_train_stream()
-    test_data = test_dm.get_validation_stream()
+    dm = DataManager.from_dataset(train_set, test_set, config)
+     
+    log_obj['data_size'] = dm.get_num_info()
+    print(dm.get_num_info())
+    train_data = dm.get_train_stream()
+    test_data = dm.get_test_stream()
     model = RNN(config, is_finetuning=True)
 
     tf.reset_default_graph()
@@ -89,7 +83,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
                                ],
                                session_init=SaverRestore(
                                    model_path=TRANSFER_LOC, ignore=ignore_restore),
-                               max_epoch=20, nr_tower=2)
+                               max_epoch=20, tower=[1])
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()
@@ -156,7 +150,7 @@ def run():
             progress = pickle.load(f)
             
     config = default_config
-    config.use_hidden_dense = True
+    config.use_hidden_dense = False
     config.dropout_keep_prob = 0.5
     config.weight_decay = 0.0
     config.stages = [2, 3, 4, 5, 6]
