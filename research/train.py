@@ -23,8 +23,8 @@ from tensorpack.callbacks import (
 from tensorpack.tfutils.common import get_default_sess_config
 from tensorpack.tfutils.sesscreate import ReuseSessionCreator
 
-TRANSFER_LOC = "./log/all-stages-max-micro-auc.tfmodel"
-MAIN_LOG_LOC = "./log/"
+TRANSFER_LOC = "./transfer_log/l30/all-stages-max-micro-auc.tfmodel"
+MAIN_LOG_LOC = "./transfer_log/l30/"
 PROGRESS_FILE = "progress.pickle"
 METRICS_FILE = "metrics.json"
 
@@ -78,12 +78,12 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
                                callbacks=[
                                    ScheduledHyperParamSetter(
                                        'learning_rate', [(0, 1e-4), (15, 1e-5)]),
-                                   ModelSaver(),
+                                   ModelSaver(max_to_keep=5),
                                    MaxSaver('training_auc', save_name),
                                ],
                                session_init=SaverRestore(
                                    model_path=TRANSFER_LOC, ignore=ignore_restore),
-                               max_epoch=20, tower=[1])
+                               max_epoch=20, tower=[0, 1])
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()

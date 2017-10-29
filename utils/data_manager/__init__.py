@@ -3,17 +3,18 @@
 
     This module transforms image urls and string tags into tensors.
 """
-from .csv_loader import (load_annot_table, load_image_table)
-from .seperation import SeparationScheme
-
 import cv2
 from functional import seq
 import numpy as np
 import pandas as pd
-from scipy.misc import imread
 from sklearn.preprocessing import MultiLabelBinarizer
 from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
-                                 MapDataComponent, ThreadedMapData, PrefetchDataZMQ)
+                                 MapDataComponent, ThreadedMapData)
+
+from .csv_loader import load_annot_table, load_image_table
+from .filter import filter_stages_and_directions, filter_labels
+from .seperation import separate
+
 
 class UrlDataFlow(DataFlow):
     """ Entry point of data pipeline.
@@ -39,7 +40,7 @@ class UrlDataFlow(DataFlow):
 class DataManager(object):
     """ Complete data pipeline.
     """
-    
+
     def __init__(self, train_set, val_set, test_set, vocab, config):
         self.train_set = train_set
         self.val_set = val_set
@@ -55,35 +56,44 @@ class DataManager(object):
         """
         image_table = load_image_table(config.image_table_location)
         annot_table = load_annot_table(config.annotation_table_location)
-        vocab = _extract_top_vocab(annot_table.annotation, config.annotation_number)
-        scheme = SeparationScheme(config, vocab)
-        sep = scheme.separate(image_table, annot_table)
+        image_table, annot_table = filter_stages_and_directions(
+            image_table, annot_table, config.stages, config.directions)
+        vocab = _extract_top_vocab(
+            annot_table.annotation, config.annotation_number)
+        image_table, annot_table = filter_labels(
+            image_table, annot_table, vocab)
+        sep = separate(image_table, annot_table, config)
         return cls(sep.train, sep.validation, sep.test, vocab, config)
 
     @classmethod
     def from_dataset(cls, train_set, test_set, config):
         """ Construct DataManager from train set and test set.
-        
+
         The train set can be further subdivided into a smaller train set and validation set.
         The proportion of the subdivision is specified by the `proportion` field in `config`.
         """
-        vocab = _extract_common_top_vocab(train_set.annotation, test_set.annotation, 
-                                          config.annotation_number)
         assert config.proportion['test'] == 0, \
             "Subdivision will not perform on test set, please make sure test proportion is zero"
-            
-        scheme = SeparationScheme(config, vocab)
-        image_table = pd.DataFrame(train_set.image_url)
-        annot_table = pd.DataFrame(train_set.annotation)
-        train_sep = scheme.separate(image_table, annot_table)
-        
+
+        train_imgs = pd.DataFrame(train_set.image_url)
+        train_annots = pd.DataFrame(train_set.annotation)
+        train_imgs, train_annots = filter_stages_and_directions(
+            train_imgs, train_annots, config.stages, config.directions)
+
+        test_imgs = pd.DataFrame(test_set.image_url)
+        test_annots = pd.DataFrame(test_set.annotation)
+        test_imgs, test_annots = filter_stages_and_directions(
+            test_imgs, test_annots, config.stages, config.directions)
+
+        vocab = _extract_common_top_vocab(train_annots.annotation, test_annots.annotation,
+                                          config.annotation_number)
+        train_imgs, train_annots = filter_labels(train_imgs, train_annots, vocab)
+        test_imgs, test_annots = filter_labels(test_imgs, test_annots, vocab)
+
+        train_sep = separate(train_imgs, train_annots, config)
         config.proportion = {'train': 0.0, 'val': 0.0, 'test': 1.0}
-        scheme = SeparationScheme(config, vocab)
-        image_table = pd.DataFrame(test_set.image_url)
-        annot_table = pd.DataFrame(test_set.annotation)
-        # still need to filter test set
-        test_sep = scheme.separate(image_table, annot_table)
-        
+        test_sep = separate(test_imgs, test_annots, config)
+
         return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
 
     def get_train_set(self):
@@ -141,10 +151,10 @@ class DataManager(object):
             .map(lambda s: seq(s.image_url).flat_map(lambda l: l).list()) \
             .map(len) \
             .list()
-            
-        return {'train': (len(self.train_set), img_nums[0]), 
+
+        return {'train': (len(self.train_set), img_nums[0]),
                 'val': (len(self.val_set), img_nums[1]),
-                'test': (len(self.test_set), img_nums[2]) }
+                'test': (len(self.test_set), img_nums[2])}
 
     def recover_label(self, encoding):
         """ Turn one-hot encoding back to string labels.
@@ -193,7 +203,7 @@ class DataManager(object):
         mat = self.binarizer.fit_transform(labels)
         return list(iter(mat))
 
-    
+
 def _extract_top_vocab(annots, num):
     all_words = pd.Series(seq(annots).flat_map(lambda l: l).list())
     if num is None:
@@ -204,19 +214,18 @@ def _extract_top_vocab(annots, num):
 
 
 def _extract_common_top_vocab(annots_one, annots_two, num):
-    fuse = 0
+    try_num = num
     while True:
-        vocab_one = set(_extract_top_vocab(annots_one, num))
-        vocab_two = set(_extract_top_vocab(annots_two, num))
+        vocab_one = set(_extract_top_vocab(annots_one, try_num))
+        vocab_two = set(_extract_top_vocab(annots_two, try_num))
         common = vocab_one.intersection(vocab_two)
         if len(common) >= num:
             return seq(common).take(num).list()
-        num += 1
-        fuse += 1
-        if fuse >= 5:
-            raise ValueError(f"After {fuse} times operation "
+        try_num += 1
+        if try_num - num >= 5:
+            raise ValueError(f"After {try_num - num} times operation "
                              "still can not find enough common labels.")
-        
+
 
 def _load_image(url_list, img_dir, img_size):
     imgs = seq(url_list) \

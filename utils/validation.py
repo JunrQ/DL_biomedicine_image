@@ -140,15 +140,18 @@ class AggregateMetric(Inferencer):
         batch_size = logits.shape[0]
         new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
         self.accu.feed(batch_size, *new_values)
+        print("_on_fetches finished")
 
     def _before_inference(self):
         """ Required by the base class. Clear stat before each epoch.
         """
         pass
+        print("_before_inference finished")
 
     def _after_inference(self):
         """ Required by the base class. 
 
         Return: A dict of scalars for logging.
         """
+        print("_after_inference called")
         return self.accu.retrive()
