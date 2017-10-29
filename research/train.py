@@ -74,7 +74,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     model = RNN(config, is_finetuning=True)
 
     tf.reset_default_graph()
-    train_config = TrainConfig(model=model, dataflow=train_data,
+    train_config = TrainConfig(model=model, dataflow=test_data,
                                callbacks=[
                                    ScheduledHyperParamSetter(
                                        'learning_rate', [(0, 1e-4), (15, 1e-5)]),
@@ -83,7 +83,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
                                ],
                                session_init=SaverRestore(
                                    model_path=TRANSFER_LOC, ignore=ignore_restore),
-                               max_epoch=20, tower=[0, 1])
+                               max_epoch=1, tower=[0, 1])
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()
@@ -92,7 +92,10 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     pred_config = PredictConfig(model=model,
                                 session_init=SaverRestore(
                                     model_path=log_dir + save_name),
+                                input_names=['image', 'length', 'label'],
                                 output_names=['logits_export', 'label'])
+    test_data.reset_state()
+    print(len(next(test_data.get_data())))
     predictor = Predictor(pred_config, test_data)
     accumulator = seq(predictor.get_result()) \
         .smap(lambda a, b: (a.shape[0],

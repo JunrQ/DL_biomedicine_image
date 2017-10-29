@@ -118,7 +118,7 @@ class RNN(ModelDesc):
     """ RNN model for image sequence annotation.
     """
 
-    def __init__(self, config, is_finetuning=False):
+    def __init__(self, config, label_weights=None, is_finetuning=False):
         """
         Args:
             read_time: How many times should the lstm run.
@@ -128,21 +128,21 @@ class RNN(ModelDesc):
         self.config = config
         self.cost = None
         self.is_finetuning = is_finetuning
+        self.scale = label_weights
 
     def _get_inputs(self):
         """ Required by the base class.
         """
         return [InputDesc(tf.float32, [None, self.config.max_sequence_length, 128, 320, 3], 'image'),
                 InputDesc(tf.int32, [None], 'length'),
-                InputDesc(tf.int32, [None, self.config.annotation_number], 'label'),
-                InputDesc(tf.float32, [self.config.annotation_number], 'scale')]
+                InputDesc(tf.int32, [None, self.config.annotation_number], 'label')]
     
     def _homo_loss(self, logits, labels):
         loss = tf.losses.sigmoid_cross_entropy(labels, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         return loss
     
-    def _focal_loss(self, logits, labels, ratio):
+    def _focal_loss(self, logits, labels, _ratio):
         """ Focal loss. arxiv:1708:02002
         """
         p_t = tf.sigmoid(logits)
@@ -178,7 +178,7 @@ class RNN(ModelDesc):
     def _build_graph(self, inputs):
         """ Required by the base class.
         """
-        image, length, label, scale = inputs
+        image, length, label = inputs
         N = tf.shape(image)[0]
         ctx = get_current_tower_context()
         feature = extract_feature_resnet(image, ctx.is_training, self.is_finetuning, self.config.weight_decay)
@@ -209,7 +209,7 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
-        loss = self._focal_loss(logits, label, scale)
+        loss = self._focal_loss(logits, label, self.scale)
         add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')

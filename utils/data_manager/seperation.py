@@ -43,7 +43,7 @@ def separate(image_table, annot_table, config):
     train_set, remain = _seperate_one_part(
         remain, train_proportion, config.tolerance_margin)
 
-    _log_separation(train_set, remain, test_set)
+    #_log_separation(train_set, remain, test_set)
     return DataSep(train=train_set, validation=remain, test=test_set)
 
 

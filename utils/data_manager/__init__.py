@@ -42,6 +42,7 @@ class DataManager(object):
     """
 
     def __init__(self, train_set, val_set, test_set, vocab, config):
+        vocab.sort()
         self.train_set = train_set
         self.val_set = val_set
         self.test_set = test_set
@@ -170,7 +171,6 @@ class DataManager(object):
         return (1 - posi_ratio) / posi_ratio
 
     def _build_basic_stream(self, data_set):
-        imbalance_ratio = self._imbalance_ratio(data_set)
         data_set = data_set.copy(deep=True)
         data_set.annotation = self._encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
@@ -195,8 +195,6 @@ class DataManager(object):
         stream = MapDataComponent(stream,
                                   lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size)
-
-        stream = MapData(stream, lambda dp: dp + [imbalance_ratio])
         return stream
 
     def _encode_labels(self, labels):

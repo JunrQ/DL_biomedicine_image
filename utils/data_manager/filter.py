@@ -50,7 +50,7 @@ def filter_labels(image_table, annot_table, vocab):
         vocab = set(vocab)
         return tuple(seq(annots).filter(lambda a: a in vocab).list())
 
-    dropped_annot = annot_table.copy()
+    dropped_annot = annot_table.copy(deep=True)
     dropped_annot.annotation = annot_table.annotation.apply(
         lambda annots: drop_annot(annots, vocab))
     nonempty_mask = dropped_annot.annotation.apply(
