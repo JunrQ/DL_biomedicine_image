@@ -70,6 +70,55 @@ def extract_feature_resnet(images, is_training, is_finetuning, weight_decay):
     return recover_ts
 
 
+def extract_feature_resnet_v2(images, is_training, is_finetuning, weight_decay):
+    """ Extract feature from image set.
+
+    Args:
+        images: Tensor of shape [N, T, H, W, C].
+        is_training: boolean tensor, indicate whether extractor acts in training mode
+            or inference mode.
+        weight_decay: l2 regularization parameter.
+
+    Return:
+        recover_ts: Tensor of shape [N, T, F].
+    """
+
+    normalized = image_preprocess(images)
+    # resnet requires that the input should be a three-dim tensor
+    # so we need to merge N and T (batch and image suquence)
+    _, _, H, W, C = normalized.get_shape().as_list()
+    T = tf.shape(normalized)[1]
+
+    merge_dim = tf.reshape(
+        normalized, shape=[-1, H, W, C], name='flatten_timestep')
+    with slim.arg_scope(resnet_arg_scope()):
+        with slim.arg_scope([slim.conv2d], trainable=False, weights_regularizer=None):
+            with slim.arg_scope([slim.batch_norm], trainable=False):
+                _, end_points = resnet_v2_101(
+                    merge_dim, is_training=is_training)
+
+    # features from resnet
+    feature = end_points['resnet_v2_101/block3']
+    _, H, W, C = feature.get_shape().as_list()
+    low_feature = tf.reshape(feature, [-1, T, H, W, C], name='recover_low_feature')
+    # add new conv layers
+    with tf.variable_scope('custom_cnn'):
+        with slim.arg_scope(resnet_arg_scope(use_batch_norm=False)):
+            with slim.arg_scope([slim.conv2d], trainable=not is_finetuning, 
+                                weights_regularizer=slim.l2_regularizer(weight_decay)):
+                with slim.arg_scope([slim.batch_norm], is_training=is_training, trainable=not is_finetuning):
+                    conv = slim.conv2d(feature, 512, (1, 1), stride=2)
+                    bn = slim.batch_norm(conv)
+                    conv = slim.conv2d(conv, 512, (3, 3), stride=1)
+                    bn = slim.batch_norm(conv)
+                    conv = slim.conv2d(conv, 512, (1, 1), stride=1)
+                    bn = slim.batch_norm(conv)
+        avg = tf.reduce_mean(bn, [1, 2], keep_dims=False)
+        # recover dims N and T
+    _, F = avg.get_shape().as_list()
+    high_feature = tf.reshape(avg, [-1, T, F], name='recover_high_feature')
+    return low_feature, high_feature
+
 def partial_match_tensor_name(tensor_dict, name):
     for key, value in tensor_dict.items():
         p = re.compile(name)
