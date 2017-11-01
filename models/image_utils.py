@@ -103,16 +103,20 @@ def extract_feature_resnet_v2(images, is_training, is_finetuning, weight_decay):
     low_feature = tf.reshape(feature, [-1, T, H, W, C], name='recover_low_feature')
     # add new conv layers
     with tf.variable_scope('custom_cnn'):
-        with slim.arg_scope(resnet_arg_scope(use_batch_norm=False)):
-            with slim.arg_scope([slim.conv2d], trainable=not is_finetuning, 
-                                weights_regularizer=slim.l2_regularizer(weight_decay)):
-                with slim.arg_scope([slim.batch_norm], is_training=is_training, trainable=not is_finetuning):
-                    conv = slim.conv2d(feature, 512, (1, 1), stride=2)
-                    bn = slim.batch_norm(conv)
-                    conv = slim.conv2d(conv, 512, (3, 3), stride=1)
-                    bn = slim.batch_norm(conv)
-                    conv = slim.conv2d(conv, 512, (1, 1), stride=1)
-                    bn = slim.batch_norm(conv)
+        with slim.arg_scope([slim.conv2d], trainable=not is_finetuning, 
+                            weights_regularizer=slim.l2_regularizer(weight_decay)):
+            with slim.arg_scope([slim.batch_norm], is_training=is_training, 
+                                trainable=not is_finetuning, scale=True):
+                '''
+                conv = slim.conv2d(feature, 512, (1, 1), stride=2)
+                bn = slim.batch_norm(conv)
+                conv = slim.conv2d(bn, 512, (3, 3), stride=1)
+                bn = slim.batch_norm(conv)
+                conv = slim.conv2d(bn, 512, (1, 1), stride=1)
+                bn = slim.batch_norm(conv)
+                '''
+                conv = slim.conv2d(feature, 512, (3, 3), stride=2)
+                bn = slim.batch_norm(conv)
         avg = tf.reduce_mean(bn, [1, 2], keep_dims=False)
         # recover dims N and T
     _, F = avg.get_shape().as_list()

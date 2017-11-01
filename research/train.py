@@ -24,7 +24,8 @@ from tensorpack.tfutils.common import get_default_sess_config
 from tensorpack.tfutils.sesscreate import ReuseSessionCreator
 
 TRANSFER_LOC = "./transfer_log/l30/all-stages-max-micro-auc.tfmodel"
-MAIN_LOG_LOC = "./transfer_log/l30/"
+RESNET_LOC = "../data/resnet_v2_101/resnet_v2_101.ckpt"
+MAIN_LOG_LOC = "./fresh_train/"
 PROGRESS_FILE = "progress.pickle"
 METRICS_FILE = "metrics.json"
 
@@ -56,7 +57,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     ignore_restore = ['learning_rate', 'global_step', 'logits/weights', 'logits/biases', 
                       'hidden_fc/weights', 'hidden_fc/biases']
     save_name = "max-training-auc.tfmodel"
-    threshold = 0.5
+    threshold = 0.4
 
     log_obj = {}
     log_obj['stages'] = config.stages
@@ -71,7 +72,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     print(dm.get_num_info())
     train_data = dm.get_train_stream()
     test_data = dm.get_test_stream()
-    model = RNN(config, is_finetuning=True)
+    model = RNN(config, is_finetuning=False)
 
     tf.reset_default_graph()
     train_config = TrainConfig(model=model, dataflow=test_data,
@@ -82,8 +83,8 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
                                    MaxSaver('training_auc', save_name),
                                ],
                                session_init=SaverRestore(
-                                   model_path=TRANSFER_LOC, ignore=ignore_restore),
-                               max_epoch=1, tower=[0, 1])
+                                   model_path=RESNET_LOC, ignore=ignore_restore),
+                               max_epoch=18, tower=[0, 1])
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()
@@ -153,7 +154,7 @@ def run():
             progress = pickle.load(f)
             
     config = default_config
-    config.use_hidden_dense = False
+    config.use_hidden_dense = True
     config.dropout_keep_prob = 0.5
     config.weight_decay = 0.0
     config.stages = [2, 3, 4, 5, 6]

@@ -64,10 +64,10 @@ class MemCell(tf.contrib.rnn.RNNCell):
         # lstm with peephole
         concated = tf.concat([flatten_mem, expanded_state],
                              1, name='concat_memory_and_state')
-        logits = slim.fully_connected(concated, 1, activation_fn=None,
-                                      weights_regularizer=slim.regularizers.l2_regularizer(
-                                          self.weight_decay),
-                                      scope='fc_read')
+        with slim.arg_scope([slim.fully_connected],
+                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
+            #dense = slim.fully_connected(concated, self._feature_size, scope='read_dense')
+            logits = slim.fully_connected(concated, 1, activation_fn=None, scope='read_logits')
         # [N, T]
         logits = tf.reshape(
             logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
@@ -118,7 +118,7 @@ class RNN(ModelDesc):
     """ RNN model for image sequence annotation.
     """
 
-    def __init__(self, config, label_weights=None, is_finetuning=False):
+    def __init__(self, config, is_finetuning=False, label_scale=None, ):
         """
         Args:
             read_time: How many times should the lstm run.
@@ -128,7 +128,7 @@ class RNN(ModelDesc):
         self.config = config
         self.cost = None
         self.is_finetuning = is_finetuning
-        self.scale = label_weights
+        self.label_scale = label_scale
 
     def _get_inputs(self):
         """ Required by the base class.
@@ -137,18 +137,18 @@ class RNN(ModelDesc):
                 InputDesc(tf.int32, [None], 'length'),
                 InputDesc(tf.int32, [None, self.config.annotation_number], 'label')]
     
-    def _homo_loss(self, logits, labels):
+    def _homo_loss(self, logits, labels, _scale):
         loss = tf.losses.sigmoid_cross_entropy(labels, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
         return loss
     
-    def _focal_loss(self, logits, labels, _ratio):
+    def _focal_loss(self, logits, labels, label_scale):
         """ Focal loss. arxiv:1708:02002
         """
         p_t = tf.sigmoid(logits)
-        loss_posi = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
+        loss_posi = -((1.0 - p_t)**self.config.gamma) * tf.log(p_t)
         p_t = 1.0 - p_t
-        loss_nega = -(1.0 - p_t)**self.config.gamma * tf.log(p_t)
+        loss_nega = -((1.0 - p_t)**self.config.gamma) * tf.log(p_t)
         mask = tf.cast(labels, tf.float32)
         loss = loss_posi * mask + loss_nega * (1 - mask)
         return tf.reduce_mean(loss, axis=[0, 1], keep_dims=False, name='loss/value')
@@ -209,7 +209,7 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
-        loss = self._focal_loss(logits, label, self.scale)
+        loss = self._focal_loss(logits, label, self.label_scale)
         add_moving_summary(loss)
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')

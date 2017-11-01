@@ -11,4 +11,4 @@ data/vgg_16.ckpt
 train_log
 research/log
 research/transfer_log
-
+research/fresh_train

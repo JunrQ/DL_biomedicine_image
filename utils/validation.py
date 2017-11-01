@@ -136,7 +136,7 @@ class AggregateMetric(Inferencer):
     def _on_fetches(self, results):
         """ Required by the base class. Calculate metrics for a batch.
         """
-        logits, labels= results
+        logits, labels = results
         batch_size = logits.shape[0]
         new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
         self.accu.feed(batch_size, *new_values)
