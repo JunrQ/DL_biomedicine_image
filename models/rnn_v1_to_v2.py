@@ -11,11 +11,12 @@ import tensorflow.contrib.slim as slim
 from tensorpack import (ModelDesc, InputDesc, get_current_tower_context)
 from tensorpack.tfutils.summary import add_moving_summary
 
-class MemCell(tf.contrib.rnn.RNNCell):
+class MemCellFU(tf.contrib.rnn.RNNCell):
     """ LSTM cell with memory.
     """
 
-    def __init__(self, mem, length, weight_decay, max_sequence_length):
+    def __init__(self, mem, length, weight_decay, max_sequence_length,
+                 dropout):
         """
         Args:
             mem: Feature tensor of shape [N, T, F].
@@ -31,6 +32,11 @@ class MemCell(tf.contrib.rnn.RNNCell):
         self._mem_size = max_sequence_length
         self._feature_size = F
         self.weight_decay = weight_decay
+        lstm = tf.contrib.rnn.LSTMCell(
+            F, use_peepholes=True, initializer=slim.xavier_initializer())
+        wrapped = tf.contrib.rnn.DropoutWrapper(
+            lstm, input_keep_prob=dropout, state_keep_prob=dropout)
+        self.lstm_cell = wrapped
 
     def __call__(self, inputs, state, scope=None):
         """ Required by the base class. Move one time step.
@@ -39,19 +45,11 @@ class MemCell(tf.contrib.rnn.RNNCell):
             _inputs: A Dummy inputs whose content is irrelevant. 
             state: Tensor of shape [F] (last state).
         """
-        N = tf.shape(inputs)[0]
-        read = self._read_memory(state)
-        gate_feature = tf.concat(
-            [read, state], 1, name='concat_read_and_state')
-
-        with slim.arg_scope([slim.fully_connected], activation_fn=tf.sigmoid,
-                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
-            forget_gate = slim.fully_connected(
-                gate_feature, self._feature_size, scope='fc_fg')
-            input_gate = slim.fully_connected(
-                gate_feature, self._feature_size, scope='fc_ig')
-        new_state = forget_gate * state + input_gate * read
-        return (), new_state
+        lstm_state = state
+        _, read_state = lstm_state
+        read = self._read_memory(read_state)
+        _, new_lstm_state = self.lstm_cell(read, lstm_state)
+        return (), new_lstm_state
 
     def _read_memory(self, state):
         """ Gather information from cell memory with attention.
@@ -59,47 +57,42 @@ class MemCell(tf.contrib.rnn.RNNCell):
 
         flatten_mem = tf.reshape(
             self.memory, [-1, self._feature_size], name='flatten_mem')
-        expanded_state = tf.tile(
-            state, [self._mem_size, 1], name='expand_state')
-        # lstm with peephole
-        concated = tf.concat([flatten_mem, expanded_state],
-                             1, name='concat_memory_and_state')
-        with slim.arg_scope([slim.fully_connected],
-                            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
-            #dense = slim.fully_connected(concated, self._feature_size, scope='read_dense')
-            logits = slim.fully_connected(concated, 1, activation_fn=None, scope='read_logits')
-        # [N, T]
-        logits = tf.reshape(
-            logits, shape=[-1, self._mem_size], name='recover_time_of_logits')
-        attention = self._calcu_attention(logits)
-        expanded_attention = tf.tile(tf.reshape(attention, [-1, 1], name='reshape_attention'),
-                                     [1, self._feature_size], name='expand_attention')
+        attention = self._calcu_attention(state)
+        expanded_attention = tf.tile(
+            tf.reshape(attention, [-1, 1]), [1, self._feature_size])
         weighted = expanded_attention * flatten_mem
         weighted = tf.reshape(
             weighted, [-1, self._mem_size, self._feature_size])
         read = tf.reduce_sum(weighted, axis=1, keep_dims=False)
         return read
     
+    def _calcu_attention(self, state):
+        memory = self.memory
+        F = self._feature_size
+        flatten_mem = tf.reshape(memory, [-1, F], name='flatten_mem')
+        expanded_state = tf.tile(
+            state, [self._mem_size, 1], name='expand_state')
+        concated = tf.concat(
+            [flatten_mem, expanded_state], axis=1, name='concate_mem_and_state')
+        with slim.arg_scope(
+            [slim.fully_connected], 
+            weights_regularizer=slim.l2_regularizer(self.weight_decay)):
+            logits = slim.fully_connected(
+                concated, 1, activation_fn=None, scope='att_logits')
+        logits = tf.reshape(logits, [-1, self._mem_size])
+        att = self._normalize_attention(logits)
+        return att
+    
     def _stable_exp(self, logits):
         sub = tf.reduce_max(logits, axis=1, keep_dims=True, name='max_logits')
         return tf.exp(logits - sub, name='exp_logits')
     
-    def _calcu_attention(self, logits):
+    def _normalize_attention(self, logits):
         exp_logits = self._stable_exp(logits)
         mask = tf.sequence_mask(self.length, self._mem_size)
         eff_exp_logits = exp_logits * tf.cast(mask, logits.dtype)
         divisor = tf.reduce_sum(eff_exp_logits, axis=1, keep_dims=True, name='softmax_divisor')
         att = eff_exp_logits / (divisor + 1e-10)
-        att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
-        return att
-    
-    def _calcu_attention_bug(self, logits):
-        """ Caution: This function is not correct, it is merely a backup.
-        """
-        mask = tf.sequence_mask(self.length, self._mem_size)
-        eff_logits = logits * tf.cast(mask, logits.dtype)
-        att = tf.nn.softmax(eff_logits)
-        att_debug = att * tf.cast(mask, logits.dtype) 
         att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
         return att
     
@@ -113,8 +106,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
     def output_size(self):
         return 0
 
-
-class RNN(ModelDesc):
+class RNNV12(ModelDesc):
     """ RNN model for image sequence annotation.
     """
 
@@ -149,11 +141,11 @@ class RNN(ModelDesc):
         p_t = tf.sigmoid(logits)
         loss_posi = -tf.log(p_t)
         if gamma > 0:
-            loss_posi *= (1 - p_t)**gamma
+            loss_posi *= (1 - p_t)**self.gamma
         p_t = 1.0 - p_t
         loss_nega = -tf.log(p_t)
         if gamma > 0:
-            loss_nega *= (1 - p_t)**gamma
+            loss_nega *= (1 - p_t)**self.gamma
         mask = tf.cast(labels, tf.float32)
         loss = loss_posi * mask + loss_nega * (1 - mask)
         return tf.reduce_mean(loss, axis=[0, 1], keep_dims=False, name='loss/value')
@@ -191,15 +183,13 @@ class RNN(ModelDesc):
 
         with tf.variable_scope('rnn'):
             with slim.arg_scope([slim.fully_connected], trainable=not self.is_finetuning):
-                rnn_cell = MemCell(feature, length, self.config.weight_decay, self.config.max_sequence_length)
-                dropout_cell = tf.contrib.rnn.DropoutWrapper(rnn_cell, state_keep_prob=dropout_keep_prob)
+                mem_cell = MemCellFU(feature, length, self.config.weight_decay, self.config.max_sequence_length, dropout_keep_prob)
                 # the content of input sequence for the lstm cell is irrelevant, but we need its length
                 # information to deduce read_time
                 dummy_input = [tf.zeros([N, 1])] * self.config.read_time
-                initial_state = self._calcu_glimpse(
-                    feature, length) if self.config.use_glimpse else None
-                _, final_encoding = tf.nn.static_rnn(
-                    dropout_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
+                initial_state, _ = self._get_initial_state(feature, length)
+                _, (_, final_encoding) = tf.nn.static_rnn(
+                    mem_cell, dummy_input, initial_state=initial_state, dtype=tf.float32, scope='process')
                 
         if self.config.use_hidden_dense:
             _, F = final_encoding.get_shape().as_list()
@@ -219,13 +209,22 @@ class RNN(ModelDesc):
         # export loss for easy access
         loss = tf.identity(loss, name='loss_export')
         # training metric
-        auc, _ = tf.metrics.auc(label, tf.sigmoid(logits), curve='ROC', 
-                                updates_collections=[tf.GraphKeys.UPDATE_OPS])
+        auc, _ = tf.metrics.auc(label, tf.sigmoid(logits), updates_collections=[tf.GraphKeys.UPDATE_OPS])
         tf.summary.scalar('training_auc', auc)
-        ap, _ = tf.metrics.auc(label, tf.sigmoid(logits), curve='PR',
-                               updates_collections=[tf.GraphKeys.UPDATE_OPS])
-        tf.summary.scalar('training_ap', ap)
         self.cost = loss
+        
+    def _get_initial_state(self, feature, length):
+        N = tf.shape(feature)[0]
+        _, _, F = feature.get_shape().as_list()
+
+        if self.config.use_glimpse:
+            lstm_init = self._calcu_glimpse(feature, length)
+        else:
+            zeros = tf.zeros([N, F], dtype=tf.float32)
+            lstm_init = (zeros, zeros)
+        accu_init = tf.zeros(
+            [N, self.config.max_sequence_length], dtype=tf.float32)
+        return lstm_init, accu_init
 
     def _calcu_glimpse(self, feature, length):
         """ Calculate initial state for recurrent layer. 

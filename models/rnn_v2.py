@@ -166,16 +166,20 @@ class RNNV2(ModelDesc):
     def _focal_loss(self, logits, labels, scale):
         """ Focal loss. arxiv:1708:02002
         """
+        gamma = self.config.gamma
         N = tf.shape(logits)[0]
         p_t = tf.sigmoid(logits)
-        loss_posi = -((1.0 - p_t)**self.config.gamma) * tf.log(p_t) * scale
+        loss_posi = -tf.log(p_t) * scale
+        if gamma >= 0:
+            loss_posi *= (1 - p_t)**gamma
         p_t = 1.0 - p_t
-        loss_nega = -((1.0 - p_t)**self.config.gamma)* tf.log(p_t)
+        loss_nega = -tf.log(p_t)
+        if gamma >= 0:
+            loss_nega *= (1 - p_t)**gamma
         mask = tf.cast(labels, tf.float32)
         combine = loss_posi * mask + loss_nega * (1 - mask)
         reduce = tf.reduce_num(combine, axis=[0, 1], keep_dims=False)
         loss = reduce / combine
-        loss = tf.identity(loss, name='loss/value')
         return loss
     
     def _doubly_stochastic_att_loss(self, accu_att, length):
@@ -224,18 +228,21 @@ class RNNV2(ModelDesc):
         logits = tf.identity(logits, name='logits_export')
         loss = self._homo_loss(logits, label, self.label_scale)
         loss += self._doubly_stochastic_att_loss(accu_att, length)
+        loss = tf.identity(loss, name='loss/value')
         add_moving_summary(loss)
         # export loss for easy access
-        loss = tf.identity(loss, name='loss_export')
         # training metric
         auc, _ = tf.metrics.auc(label, tf.sigmoid(
-            logits), updates_collections=[tf.GraphKeys.UPDATE_OPS])
+            logits), curve='ROC', updates_collections=[tf.GraphKeys.UPDATE_OPS])
         tf.summary.scalar('training_auc', auc)
+        ap, _ = tf.metrics.auc(label, tf.sigmoid(
+            logits), curve='PR', updates_collections=[tf.GraphKeys.UPDATE_OPS])
+        tf.summary.scalar('train_ap', ap)
         self.cost = loss
 
     def _get_initial_state(self, feature, length):
         N = tf.shape(feature)[0]
-        F = tf.shape(feature)[1]
+        _, _, F = feature.get_shape().as_list()
 
         if self.config.use_glimpse:
             lstm_init = self._calcu_glimpse(feature, length)
