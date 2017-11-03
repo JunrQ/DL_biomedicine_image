@@ -75,7 +75,7 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     model = RNN(config, is_finetuning=False)
 
     tf.reset_default_graph()
-    train_config = TrainConfig(model=model, dataflow=test_data,
+    train_config = TrainConfig(model=model, dataflow=train_data,
                                callbacks=[
                                    ScheduledHyperParamSetter(
                                        'learning_rate', [(0, 1e-4), (15, 1e-5)]),
@@ -96,7 +96,6 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
                                 input_names=['image', 'length', 'label'],
                                 output_names=['logits_export', 'label'])
     test_data.reset_state()
-    print(len(next(test_data.get_data())))
     predictor = Predictor(pred_config, test_data)
     accumulator = seq(predictor.get_result()) \
         .smap(lambda a, b: (a.shape[0],

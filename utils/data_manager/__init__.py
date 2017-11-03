@@ -67,7 +67,7 @@ class DataManager(object):
         return cls(sep.train, sep.validation, sep.test, vocab, config)
 
     @classmethod
-    def from_dataset(cls, train_set, test_set, config):
+    def from_dataset(cls, train_set, test_set, config, vocab=None):
         """ Construct DataManager from train set and test set.
 
         The train set can be further subdivided into a smaller train set and validation set.
@@ -86,9 +86,13 @@ class DataManager(object):
         test_imgs, test_annots = filter_stages_and_directions(
             test_imgs, test_annots, config.stages, config.directions)
 
-        vocab = _extract_common_top_vocab(train_annots.annotation, test_annots.annotation,
-                                          config.annotation_number)
-        train_imgs, train_annots = filter_labels(train_imgs, train_annots, vocab)
+        if vocab is None:
+            vocab = _extract_common_top_vocab(
+                train_annots.annotation, test_annots.annotation,
+                config.annotation_number)
+
+        train_imgs, train_annots = filter_labels(
+            train_imgs, train_annots, vocab)
         test_imgs, test_annots = filter_labels(test_imgs, test_annots, vocab)
 
         train_sep = separate(train_imgs, train_annots, config)
@@ -96,6 +100,9 @@ class DataManager(object):
         test_sep = separate(test_imgs, test_annots, config)
 
         return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
+    
+    def get_vocabulary(self):
+        return self.binarizer.classes
 
     def get_train_set(self):
         """ Get train set as pandas DataFrame
