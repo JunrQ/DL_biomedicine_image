@@ -12,3 +12,4 @@ train_log
 research/log
 research/transfer_log
 research/fresh_train
+research/single_label

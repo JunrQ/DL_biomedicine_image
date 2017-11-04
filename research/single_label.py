@@ -4,7 +4,7 @@ sys.path.append(os.path.join(sys.path[0], '..'))
 
 from config.rnn import default as default_config
 from models import RNN
-from utils import DataManager
+from utils import DataManager, select_label
 from utils.validation import (Accumulator, AggregateMetric, calcu_metrics)
 
 from functional import seq
@@ -34,6 +34,9 @@ METRICS_FILE = "metrics.json"
 # name: (stage, annotation_number)
 '''
 DATA_SETS = {
+    'D13': (6, 10),
+    'D14': (6, 20),
+    'D15': (6, 30),
     'D1':  (2, 10),
     'D2':  (2, 20),
     'D3':  (2, 30),
@@ -45,26 +48,24 @@ DATA_SETS = {
     'D9':  (5, 20),
     'D10': (5, 30),
     'D11': (5, 40),
-    'D12': (5, 50),
-    'D13': (6, 10),
-    'D14': (6, 20),
-    'D15': (6, 30),
+    'D12': (5, 50),  
     'D16': (6, 40),
     'D17': (6, 50),
     'D18': (6, 60),
 }
 '''
-DATA_SET = {
+DATA_SETS = {
     'D1': (2, 2)
 }
 
 
-def run_for_label(config, train_stream, log_dir):
+def run_for_label(config, train_stream, scale, log_dir):
     def train(config, data, log_dir):
         logger.set_logger_dir(log_dir, action='d')
         ignore_restore = ['learning_rate', 'global_step', 'logits/weights',
                           'logits/biases', 'hidden_fc/weights', 'hidden_fc/biases']
-        model = RNN(config, is_finetuning=False)
+        model = RNN(config, is_finetuning=False,
+                    label_weights=scale)
 
         tf.reset_default_graph()
         train_config = TrainConfig(model=model, dataflow=train_stream,
@@ -76,11 +77,12 @@ def run_for_label(config, train_stream, log_dir):
                                    ],
                                    session_init=SaverRestore(
                                        model_path=RESNET_LOC, ignore=ignore_restore),
-                                   max_epoch=1, tower=[0, 1])
+                                   max_epoch=1, tower=[0])
         trainer = Trainer(train_config)
         trainer.train()
 
     child = Process(target=train, args=(config, train_stream, log_dir))
+    print("*******************************")
     child.start()
     child.join()
 
@@ -92,9 +94,10 @@ def combine_and_calcu_metrics(logits, labels, queries):
     return seq(queries).zip(seq(values)).dict()
 
 
-def run_test(config, test_stream, log_dir):
+def run_test(config, test_stream, scale, log_dir):
     def test(config, data, log_dir, pipe):
-        model = RNN(config, is_finetuning=False)
+        model = RNN(config, is_finetuning=False, 
+                    label_weights=scale)
         tf.reset_default_graph()
         pred_config = PredictConfig(model=model,
                                     session_init=SaverRestore(
@@ -119,7 +122,6 @@ def run_for_dataset(config, train_set, test_set, log_dir):
     print(f"Stage: {config.stages}")
     print(f"Annotation number: {config.annotation_number}")
 
-    config.proportion = {'train': 1.0, 'val': 0.0, 'test': 0.0}
     dm = DataManager.from_dataset(train_set, test_set, config)
     log_obj['data_size'] = dm.get_num_info()
     print(dm.get_num_info())
@@ -145,12 +147,14 @@ def run_for_dataset(config, train_set, test_set, log_dir):
         if index in progress:
             continue
 
-        dm = DataManager.from_dataset(train_all_labels, test_all_labels,
-                                      config, [label])
-
         label_log_dir = log_dir + f"{index}/"
-        run_for_label(config, dm.get_train_stream(), label_log_dir)
-        label_result = run_test(config, dm.get_test_stream(), label_log_dir)
+        print(dm.get_imbalance_ratio())
+        config.annotation_number = 1
+        run_for_label(config, select_label(dm.get_train_stream(), index), 
+                      dm.get_imbalance_ratio().train.values[index:(index+1)],
+                      label_log_dir)
+        label_result = run_test(config, select_label(dm.get_test_stream(), index), None, 
+                                label_log_dir)
 
         test_result.append(label_result)
         with open(result_name, 'wb') as f:
@@ -191,9 +195,10 @@ def run():
             progress = pickle.load(f)
 
     config = default_config
-    config.use_hidden_dense = True
-    config.dropout_keep_prob = 0.5
+    config.use_hidden_dense = False
+    config.dropout_keep_prob = 0.4
     config.weight_decay = 0.0
+    config.gamma = 0
     config.stages = [2, 3, 4, 5, 6]
     config.proportion = {'train': 0.55, 'val': 0.0, 'test': 0.45}
     config.annotation_number = None
@@ -212,6 +217,7 @@ def run():
         log_dir = MAIN_LOG_LOC + set_name + '/'
         
         # build process
+        config.proportion = {'train': 1., 'val':0., 'test': 0.}
         metrics = run_for_dataset(config, train_set, test_set, log_dir)
         update_metrics_collection(metrics)
 

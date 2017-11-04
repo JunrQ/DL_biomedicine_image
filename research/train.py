@@ -78,13 +78,13 @@ def run_for_dataset(config, train_set, test_set, log_dir, pipe):
     train_config = TrainConfig(model=model, dataflow=train_data,
                                callbacks=[
                                    ScheduledHyperParamSetter(
-                                       'learning_rate', [(0, 1e-4), (15, 1e-5)]),
+                                       'learning_rate', [(0, 1e-4), (40, 1e-5)]),
                                    ModelSaver(max_to_keep=5),
                                    MaxSaver('training_auc', save_name),
                                ],
                                session_init=SaverRestore(
                                    model_path=RESNET_LOC, ignore=ignore_restore),
-                               max_epoch=18, tower=[0, 1])
+                               max_epoch=1, tower=[0])
     trainer = Trainer(train_config)
     trainer.train()
     trainer.sess.close()
@@ -153,9 +153,10 @@ def run():
             progress = pickle.load(f)
             
     config = default_config
-    config.use_hidden_dense = True
-    config.dropout_keep_prob = 0.5
+    config.use_hidden_dense = False
+    config.dropout_keep_prob = 0.4
     config.weight_decay = 0.0
+    config.gamma = 0
     config.stages = [2, 3, 4, 5, 6]
     config.proportion = {'train': 0.55, 'val': 0.0, 'test': 0.45}
     config.annotation_number = None

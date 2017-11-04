@@ -208,6 +208,11 @@ class DataManager(object):
         mat = self.binarizer.fit_transform(labels)
         return list(iter(mat))
 
+    
+def select_label(ds, index):
+    stream = MapDataComponent(ds,
+                              lambda lbs: lbs[:, index:(index+1)], 2)
+    return stream
 
 def _extract_top_vocab(annots, num):
     all_words = pd.Series(seq(annots).flat_map(lambda l: l).list())
