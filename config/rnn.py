@@ -28,3 +28,4 @@ default.dropout_keep_prob = 0.5
 default.gamma = 2
 default.doubly_stochastic_lambda = 1e-3
 default.batch_size = 64
+default.use_foreign = False

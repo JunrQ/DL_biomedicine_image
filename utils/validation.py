@@ -121,10 +121,11 @@ class AggregateMetric(Inferencer):
     """ Calculate mAP, AUC and loss metrics using validation set.
     """
 
-    def __init__(self, queries, threshold):
+    def __init__(self, queries, threshold, show_per_label=False):
         self.queries = queries
         self.threshold = threshold
         self.accu = Accumulator(*queries)
+        self.show_per_label = show_per_label
 
     def _get_fetches(self):
         """ Required by the base class.
@@ -139,7 +140,19 @@ class AggregateMetric(Inferencer):
         logits, labels = results
         batch_size = logits.shape[0]
         new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
+            
         self.accu.feed(batch_size, *new_values)
+        
+    def print_per_label(self, logits, labels, loss):
+        scores = expit(logits)
+        pred = pred_from_score(scores, self.threshold)
+        pred, labels = _filter_all_negative(pred, labels)
+        f1_score = metrics.f1_score(labels, pred, average=None)
+        per_label_loss = np.mean(loss, axis=0)
+        print("Per label f1_score:")
+        print(f1_score)
+        print("Per label loss:")
+        print(per_label_loss)
 
     def _before_inference(self):
         """ Required by the base class. Clear stat before each epoch.

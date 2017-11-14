@@ -36,7 +36,6 @@ class UrlDataFlow(DataFlow):
         """
         return len(self.dataframe)
 
-
 class DataManager(object):
     """ Complete data pipeline.
     """
@@ -48,6 +47,8 @@ class DataManager(object):
         self.test_set = test_set
         self.binarizer = MultiLabelBinarizer(classes=vocab)
         self.config = config
+        self.overrided = False
+        self.image_features = None
 
     @classmethod
     def from_config(cls, config):
@@ -100,6 +101,10 @@ class DataManager(object):
         test_sep = separate(test_imgs, test_annots, config)
 
         return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
+    
+    def override_feature(self, feature):
+        self.overrided = True
+        self.image_features = feature
     
     def get_vocabulary(self):
         return self.binarizer.classes
@@ -176,8 +181,35 @@ class DataManager(object):
         binary_annot = np.array(binary_annot)
         posi_ratio = np.sum(binary_annot, axis=0) / binary_annot.shape[0]
         return (1 - posi_ratio) / posi_ratio
-
+    
     def _build_basic_stream(self, data_set):
+        if self.overrided:
+            return self._stream_from_feature(data_set)
+        else:
+            return self._stream_from_url(data_set)
+
+    def _stream_from_feature(self, data_set):
+        data_set = data_set.copy(deep=True)
+        data_set.annotation = self._encode_labels(data_set.annotation)
+        stream = UrlDataFlow(data_set)
+
+        # trim image sequence to max length, also shuffle squence
+        max_len = self.config.max_sequence_length
+        stream = MapDataComponent(stream,
+                                  lambda urls: _cut_to_max_length(urls, max_len), 0)
+
+        # add length info of image sequence into data points
+        stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
+        # read image multithreadedly
+        stream = MapDataComponent(stream,
+                                  lambda urls: seq(urls).map(lambda url: self.image_features[url]).list(), 0)
+        # pad and stack images to Tensor(shape=[T, C, H, W])
+        stream = MapDataComponent(stream,
+                                  lambda imgs: _pad_feature_input(imgs, self.config.max_sequence_length), 0)
+        stream = BatchData(stream, self.config.batch_size, remainder=True)
+        return stream   
+        
+    def _stream_from_url(self, data_set):
         data_set = data_set.copy(deep=True)
         data_set.annotation = self._encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
@@ -200,13 +232,15 @@ class DataManager(object):
 
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
-                                  lambda imgs: _pad_input(imgs, self.config.max_sequence_length), 0)
-        stream = BatchData(stream, self.config.batch_size)
+                                  lambda imgs: _pad_image_input(imgs, self.config.max_sequence_length), 0)
+        stream = BatchData(stream, self.config.batch_size, remainder=True)
         return stream
 
     def _encode_labels(self, labels):
         mat = self.binarizer.fit_transform(labels)
         return list(iter(mat))
+    
+    
 
     
 def select_label(ds, index):
@@ -252,7 +286,14 @@ def _cut_to_max_length(url_list, max_len):
     return np.random.choice(url_list, select_len)
 
 
-def _pad_input(img_list, max_len):
+def _pad_feature_input(feature_list, max_len):
+    additional = max_len - len(feature_list)
+    tensor = np.stack(feature_list, axis=0)
+    paddings = [[0, additional], [0, 0]]
+    padded = np.pad(tensor, paddings, mode='constant')
+    return padded
+
+def _pad_image_input(img_list, max_len):
     additional = max_len - len(img_list)
     tensor = np.stack(img_list, axis=0)
     paddings = [[0, additional], [0, 0], [0, 0], [0, 0]]
