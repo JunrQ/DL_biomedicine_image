@@ -30,7 +30,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
 
     def __call__(self, inputs, state, scope=None):
         lstm_state, accu_att = state
-        _, read_state = lstm_state
+        read_state, _ = lstm_state
         read, att = self._read_memory(read_state)
         _, new_lstm_state = self.lstm_cell(read, lstm_state)
         return (), (new_lstm_state, accu_att + att)

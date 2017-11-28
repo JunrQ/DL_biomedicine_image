@@ -32,7 +32,6 @@ METRICS_FILE = "metrics.json"
 
 
 # name: (stage, annotation_number)
-'''
 DATA_SETS = {
     'D13': (6, 10),
     'D14': (6, 20),
@@ -53,10 +52,7 @@ DATA_SETS = {
     'D17': (6, 50),
     'D18': (6, 60),
 }
-'''
-DATA_SETS = {
-    'D1': (2, 2)
-}
+
 
 
 def run_for_label(config, train_stream, scale, log_dir):
@@ -71,13 +67,13 @@ def run_for_label(config, train_stream, scale, log_dir):
         train_config = TrainConfig(model=model, dataflow=train_stream,
                                    callbacks=[
                                        ScheduledHyperParamSetter(
-                                           'learning_rate', [(0, 1e-4), (15, 1e-5)]),
+                                           'learning_rate', [(0, 1e-4), (30, 1e-5)]),
                                        ModelSaver(max_to_keep=5),
                                        MaxSaver('training_ap', MODEL_NAME),
                                    ],
                                    session_init=SaverRestore(
                                        model_path=RESNET_LOC, ignore=ignore_restore),
-                                   max_epoch=1, tower=[0])
+                                   max_epoch=44, tower=[0])
         trainer = Trainer(train_config)
         trainer.train()
 
@@ -88,8 +84,8 @@ def run_for_label(config, train_stream, scale, log_dir):
 
 
 def combine_and_calcu_metrics(logits, labels, queries):
-    logits = np.stack(logits)
-    labels = np.stack(labels)
+    logits = np.hstack(logits)
+    labels = np.hstack(labels)
     values = calcu_metrics(logits, labels, queries, 0.4)
     return seq(queries).zip(seq(values)).dict()
 
@@ -99,17 +95,22 @@ def run_test(config, test_stream, scale, log_dir):
         model = RNN(config, is_finetuning=False, 
                     label_weights=scale)
         tf.reset_default_graph()
-        pred_config = PredictConfig(model=model,
-                                    session_init=SaverRestore(
-                                        model_path=log_dir + MODEL_NAME),
-                                    output_names=['logits_export', 'label'])
-        data.reset_state()
-        predictor = Predictor(pred_config, data)
-        result = list(predictor.get_result())
-        pipe.send(zip(*result))
+        with tf.device('GPU:1'):
+            pred_config = PredictConfig(model=model,
+                                        session_init=SaverRestore(
+                                            model_path=log_dir + MODEL_NAME),
+                                        output_names=['logits_export', 'label'])
+            data.reset_state()
+            predictor = Predictor(pred_config, data)
+            result = list(predictor.get_result())
+        logits, labels = list(zip(*result))
+        logits = np.vstack(logits)
+        labels = np.vstack(labels)
+        pipe.send((logits, labels))
 
     rx, tx = Pipe(duplex=False)
     child = Process(target=test, args=(config, test_stream, log_dir, tx))
+    print("------------------------------------------")
     child.start()
     child.join()
     return rx.recv()
@@ -163,7 +164,7 @@ def run_for_dataset(config, train_set, test_set, log_dir):
         with open(prog_name, 'wb') as f:
             pickle.dump(progress, f)
 
-    logits, labels = zip(*test_result)
+    logits, labels = list(zip(*test_result))
     metrics = combine_and_calcu_metrics(logits, labels, config.validation_metrics)
     print(metrics)
     log_obj['metrics'] = metrics
