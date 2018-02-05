@@ -10,12 +10,14 @@ import numpy as np
 
 def _filter_all_negative(logits, label):
     """ AUC and mAP metrics only work when positive sample presents.
-    However, in some batches, a class' ground truth labels could be all negative. 
+    However, in some batches, a class's ground truth labels could be all negative. 
     Thus, we need to filter out those classes to avoid computation error. 
     """
     keep_mask = np.any(label, axis=0)
+    logits, label = logits[:, keep_mask], label[:, keep_mask]
+    
+    keep_mask = np.any(~label, axis=0)
     return logits[:, keep_mask], label[:, keep_mask]
-
 
 
 def pred_from_score(scores, threshold):
@@ -139,9 +141,12 @@ class AggregateMetric(Inferencer):
         """
         logits, labels = results
         batch_size = logits.shape[0]
-        new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
+        try:
+            new_values = calcu_metrics(logits, labels, self.queries, self.threshold)
+            self.accu.feed(batch_size, *new_values)
+        except ValueError as err:
+            print(err)
             
-        self.accu.feed(batch_size, *new_values)
         
     def print_per_label(self, logits, labels, loss):
         scores = expit(logits)

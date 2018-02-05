@@ -126,6 +126,27 @@ class MemCell(tf.contrib.rnn.RNNCell):
     def output_size(self):
         return 0
 
+    
+def focal_loss(logits, label, gamma, ratio):
+    """ Focal loss. arxiv:1708:02002
+    """
+    N = tf.shape(logits)[0]
+    p_t = tf.sigmoid(logits) + 1e-8
+    loss_posi = -tf.log(p_t)
+    if ratio is not None:
+        loss_posi *= ratio
+    if gamma > 0:
+        loss_posi *= (1.0 - p_t)**gamma 
+    p_t = (1.0 - p_t) + 1e-8
+    loss_nega = -tf.log(p_t)
+    if gamma > 0:
+        loss_nega *= (1.0 - p_t)**gamma
+    mask = tf.cast(label, tf.float32)
+    loss = loss_posi * mask + loss_nega * (1 - mask)
+    loss = tf.identity(loss, name='per_label_loss')
+    sum = tf.reduce_sum(loss, axis=[0, 1], keep_dims=False)
+    return sum / tf.cast(N, tf.float32)
+
 
 class RNN(ModelDesc):
     """ RNN model for image sequence annotation.
@@ -158,27 +179,7 @@ class RNN(ModelDesc):
     def _homo_loss(self, logits, labels, _ratio):
         loss = tf.losses.sigmoid_cross_entropy(labels, logits,
                                                reduction=tf.losses.Reduction.MEAN, scope='loss')
-        return loss
-    
-    def _focal_loss(self, logits, labels, ratio):
-        """ Focal loss. arxiv:1708:02002
-        """
-        N = tf.shape(logits)[0]
-        p_t = tf.sigmoid(logits) + 1e-8
-        loss_posi = -tf.log(p_t)
-        if ratio is not None:
-            loss_posi *= ratio
-        if self.config.gamma > 0:
-            loss_posi *= (1.0 - p_t)**self.config.gamma 
-        p_t = (1.0 - p_t) + 1e-8
-        loss_nega = -tf.log(p_t)
-        if self.config.gamma > 0:
-            loss_nega *= (1.0 - p_t)**self.config.gamma
-        mask = tf.cast(labels, tf.float32)
-        loss = loss_posi * mask + loss_nega * (1 - mask)
-        loss = tf.identity(loss, name='per_label_loss')
-        sum = tf.reduce_sum(loss, axis=[0, 1], keep_dims=False)
-        return sum / tf.cast(N, tf.float32)
+        return loss        
     
     def _weighted_loss(self, logits, labels, ratio):
         """ Scale loss per-label by weights
@@ -265,7 +266,7 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
-        loss = self._focal_loss(logits, label, self.scale)
+        loss = focal_loss(logits, label, self.config.gamma, self.scale)
         loss += self._ds_att_loss(accu_att, length)
         loss = tf.identity(loss, name='loss/value')
         add_moving_summary(loss)
