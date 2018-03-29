@@ -6,10 +6,10 @@ class Config():
 
 
 default = Config()
-default.image_directory = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/pic_data/"
+default.image_directory = str(Path.home()) + "/flyish/DL_biomedicine_image/data/pic_data/"
 default.image_size = (320, 128)
-default.image_table_location = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/standard_images.csv"
-default.annotation_table_location = str(Path.home()) + "/Documents/flyexpress/DL_biomedicine_image/data/standard_annotations.csv"
+default.image_table_location = str(Path.home()) + "/flyish/DL_biomedicine_image/data/standard_images.csv"
+default.annotation_table_location = str(Path.home()) + "/flyish/DL_biomedicine_image/data/standard_annotations.csv"
 default.stages = [2, 3, 4, 5, 6]
 default.directions = ['ventral', 'dorsal', 'lateral']
 default.annotation_number = 20
@@ -21,11 +21,11 @@ default.validation_metrics = ['mean_average_precision', 'macro_auc', 'micro_auc'
                               'macro_f1', 'micro_f1', 'ranking_mean_average_precision',
                               'coverage', 'ranking_loss', 'one_error']
 default.use_glimpse = True
-default.use_hidden_dense = False
+default.use_hidden_dense = True
 default.read_time = 5
 default.weight_decay = 0.0
 default.dropout_keep_prob = 0.5
 default.gamma = 2
-default.doubly_stochastic_lambda = 1e-3
+default.doubly_stochastic_lambda = 0
 default.batch_size = 64
 default.use_foreign = False

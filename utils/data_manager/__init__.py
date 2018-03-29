@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import MultiLabelBinarizer
 from tensorpack.dataflow import (BatchData, CacheData, DataFlow, MapData,
-                                 MapDataComponent, ThreadedMapData)
+                                 MapDataComponent, ThreadedMapData, LocallyShuffleData)
 
 from .csv_loader import load_annot_table, load_image_table
 from .filter import filter_stages_and_directions, filter_labels
@@ -35,6 +35,21 @@ class UrlDataFlow(DataFlow):
         """ Required by base class DataFlow
         """
         return len(self.dataframe)
+    
+    
+class UrlDataFlowSi(DataFlow):
+    def __init__(self, dataframe):
+        self.dataframe = dataframe
+        
+    def get_data(self):
+        for _, row in self.dataframe.iterrows():
+            urls = row.image_url
+            annots = row.annotation
+            for url in urls:
+                yield [url, annots]
+                
+    def size(self):
+        return seq(self.dataframe.image_url.values).map(len).sum()
 
 class DataManager(object):
     """ Complete data pipeline.
@@ -149,6 +164,24 @@ class DataManager(object):
         """
         stream = self._build_basic_stream(self.test_set)
         return stream
+    
+    def get_train_stream_si(self):
+        """ Single instance train stream
+        """
+        stream = self._build_basic_stream_si(self.train_set)
+        return stream
+    
+    def get_validation_stream_si(self):
+        """ Sinle instance train stream
+        """
+        stream = self._build_basic_stream_si(self.val_set)
+        return stream
+    
+    def get_test_stream_si(self):
+        """ Single instance test stream
+        """
+        stream = self._build_basic_stream_si(self.test_set)
+        return stream
 
     def get_imbalance_ratio(self):
         """ Get the ratio of imbalance of each label.
@@ -177,10 +210,27 @@ class DataManager(object):
         return self.binarizer.inverse_transform(encoding)
 
     def _imbalance_ratio(self, data_set):
-        binary_annot = self._encode_labels(data_set.annotation)
+        binary_annot = self.encode_labels(data_set.annotation)
         binary_annot = np.array(binary_annot)
         posi_ratio = np.sum(binary_annot, axis=0) / binary_annot.shape[0]
         return (1 - posi_ratio) / posi_ratio
+    
+    def _build_basic_stream_si(self, data_set):
+        assert not self.overrided, "single instance stream must be built from image"
+        
+        data_set = data_set.copy(deep=True)
+        data_set.annotation = self.encode_labels(data_set.annotation)
+        stream = UrlDataFlowSi(data_set)
+        
+        stream = MapDataComponent(stream,
+                                  lambda url: load_image_si(url, self.config.image_directory,
+                                                             self.config.image_size), 0)
+        stream = ThreadedMapData(stream, nr_thread=10, map_func=lambda i: i, buffer_size=1000)
+        stream = LocallyShuffleData(stream, 1000)
+        stream = BatchData(stream, self.config.batch_size, remainder=True)
+        
+        return stream
+        
     
     def _build_basic_stream(self, data_set):
         if self.overrided:
@@ -190,13 +240,13 @@ class DataManager(object):
 
     def _stream_from_feature(self, data_set):
         data_set = data_set.copy(deep=True)
-        data_set.annotation = self._encode_labels(data_set.annotation)
+        data_set.annotation = self.encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
 
         # trim image sequence to max length, also shuffle squence
         max_len = self.config.max_sequence_length
         stream = MapDataComponent(stream,
-                                  lambda urls: _cut_to_max_length(urls, max_len), 0)
+                                  lambda urls: cut_to_max_length(urls, max_len), 0)
 
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
@@ -205,19 +255,19 @@ class DataManager(object):
                                   lambda urls: seq(urls).map(lambda url: self.image_features[url]).list(), 0)
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
-                                  lambda imgs: _pad_feature_input(imgs, self.config.max_sequence_length), 0)
+                                  lambda imgs: pad_feature_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size, remainder=True)
         return stream   
         
     def _stream_from_url(self, data_set):
         data_set = data_set.copy(deep=True)
-        data_set.annotation = self._encode_labels(data_set.annotation)
+        data_set.annotation = self.encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
 
         # trim image sequence to max length, also shuffle squence
         max_len = self.config.max_sequence_length
         stream = MapDataComponent(stream,
-                                  lambda urls: _cut_to_max_length(urls, max_len), 0)
+                                  lambda urls: cut_to_max_length(urls, max_len), 0)
 
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
@@ -225,22 +275,20 @@ class DataManager(object):
 
         stream = ThreadedMapData(
             stream, nr_thread=5,
-            map_func=lambda dp: [_load_image(
+            map_func=lambda dp: [load_image(
                 dp[0], self.config.image_directory, self.config.image_size),
                 dp[1], dp[2]],
             buffer_size=100)
 
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
-                                  lambda imgs: _pad_image_input(imgs, self.config.max_sequence_length), 0)
+                                  lambda imgs: pad_image_input(imgs, self.config.max_sequence_length), 0)
         stream = BatchData(stream, self.config.batch_size, remainder=True)
         return stream
 
-    def _encode_labels(self, labels):
+    def encode_labels(self, labels):
         mat = self.binarizer.fit_transform(labels)
         return list(iter(mat))
-    
-    
 
     
 def select_label(ds, index):
@@ -271,29 +319,32 @@ def _extract_common_top_vocab(annots_one, annots_two, num):
                              "still can not find enough common labels.")
 
 
-def _load_image(url_list, img_dir, img_size):
+def load_image(url_list, img_dir, img_size):
     imgs = seq(url_list) \
-        .map(lambda url: img_dir + url) \
-        .map(lambda loc: cv2.imread(loc, cv2.IMREAD_COLOR)) \
-        .map(lambda img: cv2.cvtColor(img, cv2.COLOR_BGR2RGB)) \
-        .map(lambda img: cv2.resize(img, img_size)) \
+        .map(lambda url: load_image_si(url, img_dir, img_size)) \
         .list()
     return imgs
+                                  
+def load_image_si(url, img_dir, img_size):
+    img = cv2.imread(img_dir + url)
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = cv2.resize(img, img_size)
+    return img
 
 
-def _cut_to_max_length(url_list, max_len):
+def cut_to_max_length(url_list, max_len):
     select_len = min(len(url_list), max_len)
     return np.random.choice(url_list, select_len)
 
 
-def _pad_feature_input(feature_list, max_len):
+def pad_feature_input(feature_list, max_len):
     additional = max_len - len(feature_list)
     tensor = np.stack(feature_list, axis=0)
     paddings = [[0, additional], [0, 0]]
     padded = np.pad(tensor, paddings, mode='constant')
     return padded
 
-def _pad_image_input(img_list, max_len):
+def pad_image_input(img_list, max_len):
     additional = max_len - len(img_list)
     tensor = np.stack(img_list, axis=0)
     paddings = [[0, additional], [0, 0], [0, 0], [0, 0]]

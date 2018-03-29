@@ -25,30 +25,30 @@ from tensorpack.tfutils.sesscreate import ReuseSessionCreator
 
 TRANSFER_LOC = "./transfer_log/l30/all-stages-max-micro-auc.tfmodel"
 RESNET_LOC = "../data/resnet_v2_101/resnet_v2_101.ckpt"
-MAIN_LOG_LOC = "./fresh_train/"
+MAIN_LOG_LOC = "./log/"
 PROGRESS_FILE = "progress.pickle"
 METRICS_FILE = "metrics.json"
 
 # name: (stage, annotation_number)
 DATA_SETS = {
     'D1':  (2, 10),
-    'D2':  (2, 20),
-    'D3':  (2, 30),
+    #'D2':  (2, 20),
+    #'D3':  (2, 30),
     'D4':  (3, 10),
-    'D5':  (3, 20),
+    #'D5':  (3, 20),
     'D6':  (4, 10),
-    'D7':  (4, 20),
+    #'D7':  (4, 20),
     'D8':  (5, 10),
-    'D9':  (5, 20),
-    'D10': (5, 30),
-    'D11': (5, 40),
-    'D12': (5, 50),
+    #'D9':  (5, 20),
+    #'D10': (5, 30),
+    #'D11': (5, 40),
+    #'D12': (5, 50),
     'D13': (6, 10),
     'D14': (6, 20),
-    'D15': (6, 30),
-    'D16': (6, 40),
-    'D17': (6, 50),
-    'D18': (6, 60),
+    #'D15': (6, 30),
+    #'D16': (6, 40),
+    #'D17': (6, 50),
+    #'D18': (6, 60),
 }
 
 

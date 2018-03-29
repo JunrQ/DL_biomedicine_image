@@ -94,6 +94,7 @@ class MemCell(tf.contrib.rnn.RNNCell):
         divisor = tf.reduce_sum(eff_exp_logits, axis=1, keep_dims=True, name='softmax_divisor')
         att = eff_exp_logits / (divisor + 1e-10)
         att_debug = tf.reduce_sum(att, axis=1, keep_dims=False, name='att_debug')
+        att = tf.identity(att, name='attention')
         return att
     
     def _scale_attention(self, att, state):
@@ -250,6 +251,8 @@ class RNN(ModelDesc):
                 else:
                     final_encoding, _ = initial_state
                     accu_att = tf.ones([N, self.config.max_sequence_length], dtype=tf.float32)
+        
+        accu_att = tf.identity(accu_att, name='accu_att')
                 
         if self.config.use_hidden_dense:
             _, F = final_encoding.get_shape().as_list()
