@@ -22,7 +22,7 @@ def image_preprocess(image):
         return image
 
 
-def extract_feature_resnet(images, is_training, is_finetuning, weight_decay):
+def extract_feature_resnet(images, is_training, weight_decay):
     """ Extract feature from image set.
 
     Args:
@@ -43,11 +43,9 @@ def extract_feature_resnet(images, is_training, is_finetuning, weight_decay):
 
     merge_dim = tf.reshape(
         normalized, shape=[-1, H, W, C], name='flatten_timestep')
-    with slim.arg_scope(resnet_arg_scope()):
-        with slim.arg_scope([slim.conv2d], trainable=False, weights_regularizer=None):
-            with slim.arg_scope([slim.batch_norm], trainable=False):
-                _, end_points = resnet_v2_101(
-                    merge_dim, is_training=is_training)
+    
+    with slim.arg_scope(resnet_arg_scope(weight_decay=weight_decay)):
+        _, end_points = resnet_v2_101(merge_dim, is_training=is_training)
 
     # features from resnet
     feature = end_points['resnet_v2_101/block3']
@@ -55,9 +53,9 @@ def extract_feature_resnet(images, is_training, is_finetuning, weight_decay):
     # add new conv layers
     with tf.variable_scope('custom_cnn'):
         with slim.arg_scope(resnet_arg_scope(use_batch_norm=False)):
-            with slim.arg_scope([slim.conv2d], trainable=not is_finetuning, 
+            with slim.arg_scope([slim.conv2d],
                                 weights_regularizer=slim.l2_regularizer(weight_decay)):
-                with slim.arg_scope([slim.batch_norm], is_training=is_training, trainable=not is_finetuning):
+                with slim.arg_scope([slim.batch_norm], is_training=is_training):
                     conv = slim.conv2d(feature, 512, (3, 3), stride=2, scope='conv1')
                     bn = slim.batch_norm(conv, scope='batch_norm1')
                     print(f"Conv feature map shape: {bn.get_shape()}")

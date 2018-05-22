@@ -224,7 +224,7 @@ class RNN(ModelDesc):
         if not self.config.use_foreign:
             image, length, label = inputs
             feature = extract_feature_resnet(
-                image, ctx.is_training, self.is_finetuning, self.config.weight_decay)
+                image, ctx.is_training, self.config.weight_decay)
             feature = tf.identity(feature, name='feature')
         else:
             feature, length, label = inputs

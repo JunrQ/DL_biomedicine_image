@@ -19,7 +19,7 @@ default.tolerance_margin = 0.02
 default.shuffle_separation = True
 default.validation_metrics = ['mean_average_precision', 'macro_auc', 'micro_auc',
                               'macro_f1', 'micro_f1', 'ranking_mean_average_precision',
-                              'coverage', 'ranking_loss', 'one_error']
+                              'coverage', 'ranking_loss', 'one_error', 'sensitivity', 'specificity']
 default.use_glimpse = True
 default.use_hidden_dense = True
 default.read_time = 5

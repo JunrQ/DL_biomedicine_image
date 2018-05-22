@@ -32,11 +32,8 @@ class PlainCnn(ModelDesc):
         _, H, W, C = normalized.get_shape().as_list()
         F = 512
         
-        with slim.arg_scope(resnet_arg_scope()):
-            with slim.arg_scope([slim.conv2d], trainable=False, weights_regularizer=None):
-                with slim.arg_scope([slim.batch_norm], trainable=False):
-                    _, end_points = resnet_v2_101(
-                        normalized, is_training=ctx.is_training)
+        with slim.arg_scope(resnet_arg_scope(weight_decay=self.config.weight_decay)):
+            _, end_points = resnet_v2_101(normalized, is_training=ctx.is_training)
                     
         resnet_feature = end_points['resnet_v2_101/block3']
         resnet_feature = tf.nn.dropout(

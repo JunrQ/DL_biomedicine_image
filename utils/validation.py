@@ -72,6 +72,24 @@ def calcu_one_metric(scores, labels, metric, threshold=None):
         top_score = np.argmax(scores, axis=1)
         top_label = labels[range(len(top_score)), top_score]
         ans = 1 - np.sum(top_label) / len(top_label)
+        
+    elif metric == 'sensitivity':
+        scores, labels = _filter_all_negative(scores, labels)
+        pred = pred_from_score(scores, threshold)
+        
+        ans = seq(labels.transpose()).zip(seq(pred.transpose())) \
+            .smap(lambda l, p: metrics.confusion_matrix(l, p)) \
+            .map(lambda m: m[1][1] / (m[1][1] + m[1][0])) \
+            .average()
+        
+    elif metric == 'specificity':
+        scores, labels = _filter_all_negative(scores, labels)
+        pred = pred_from_score(scores, threshold)
+        
+        ans = seq(labels.transpose()).zip(seq(pred.transpose())) \
+            .smap(lambda l, p: metrics.confusion_matrix(l, p)) \
+            .map(lambda m: m[0][0] / (m[0][0] + m[0][1])) \
+            .average()
 
     else:
         raise f"unsuppored metric: {metric}"

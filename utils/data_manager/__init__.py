@@ -221,11 +221,11 @@ class DataManager(object):
         data_set = data_set.copy(deep=True)
         data_set.annotation = self.encode_labels(data_set.annotation)
         stream = UrlDataFlowSi(data_set)
-        
-        stream = MapDataComponent(stream,
-                                  lambda url: load_image_si(url, self.config.image_directory,
-                                                             self.config.image_size), 0)
-        stream = ThreadedMapData(stream, nr_thread=10, map_func=lambda i: i, buffer_size=1000)
+        stream = ThreadedMapData(stream, nr_thread=10, buffer_size=1000,
+            map_func=lambda dp: [
+                load_image_si(dp[0], self.config.image_directory, self.config.image_size),
+                dp[1],
+            ])
         stream = LocallyShuffleData(stream, 1000)
         stream = BatchData(stream, self.config.batch_size, remainder=True)
         
