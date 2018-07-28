@@ -29,3 +29,4 @@ default.gamma = 2
 default.doubly_stochastic_lambda = 0
 default.batch_size = 64
 default.use_foreign = False
+default.downsample = 1

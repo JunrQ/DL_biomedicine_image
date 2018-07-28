@@ -5,6 +5,7 @@
 __pycache__
 **/test.ipynb
 *.pickle
+*.pyc
 report
 data/pic_data
 data/resnet_v2_101

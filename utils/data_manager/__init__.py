@@ -191,6 +191,14 @@ class DataManager(object):
         df['val'] = self._imbalance_ratio(self.val_set)
         df['test'] = self._imbalance_ratio(self.test_set)
         return df
+    
+    def get_label_info(self):
+        df = pd.DataFrame(index=self.binarizer.classes)
+        df['train'] = self._label_count(self.train_set)
+        df['val'] = self._label_count(self.val_set)
+        df['test'] = self._label_count(self.test_set)
+        
+        return df.sort_values('train', ascending=False)
 
     def get_num_info(self):
         img_nums = seq((self.train_set, self.val_set, self.test_set)) \
@@ -208,6 +216,11 @@ class DataManager(object):
             Could be useful for demonstration.
         """
         return self.binarizer.inverse_transform(encoding)
+    
+    def _label_count(self, data_set):
+        binary_annot = self.encode_labels(data_set.annotation)
+        binary_annot = np.array(binary_annot)
+        return np.sum(binary_annot, axis=0)
 
     def _imbalance_ratio(self, data_set):
         binary_annot = self.encode_labels(data_set.annotation)
@@ -223,7 +236,12 @@ class DataManager(object):
         stream = UrlDataFlowSi(data_set)
         stream = ThreadedMapData(stream, nr_thread=10, buffer_size=1000,
             map_func=lambda dp: [
-                load_image_si(dp[0], self.config.image_directory, self.config.image_size),
+                load_image_si(
+                    dp[0], 
+                    self.config.image_directory, 
+                    self.config.image_size,
+                    self.config.downsample
+                ),
                 dp[1],
             ])
         stream = LocallyShuffleData(stream, 1000)
@@ -274,9 +292,9 @@ class DataManager(object):
         # read image multithreadedly
 
         stream = ThreadedMapData(
-            stream, nr_thread=5,
+            stream, nr_thread=10,
             map_func=lambda dp: [load_image(
-                dp[0], self.config.image_directory, self.config.image_size),
+                dp[0], self.config.image_directory, self.config.image_size, self.config.downsample),
                 dp[1], dp[2]],
             buffer_size=100)
 
@@ -319,16 +337,17 @@ def _extract_common_top_vocab(annots_one, annots_two, num):
                              "still can not find enough common labels.")
 
 
-def load_image(url_list, img_dir, img_size):
+def load_image(url_list, img_dir, img_size, downsample):
     imgs = seq(url_list) \
-        .map(lambda url: load_image_si(url, img_dir, img_size)) \
+        .map(lambda url: load_image_si(url, img_dir, img_size, downsample)) \
         .list()
     return imgs
                                   
-def load_image_si(url, img_dir, img_size):
+def load_image_si(url, img_dir, img_size, downsample):
     img = cv2.imread(img_dir + url)
     img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-    img = cv2.resize(img, img_size)
+    h, w = img_size
+    img = cv2.resize(img, (h // downsample, w // downsample))
     return img
 
 

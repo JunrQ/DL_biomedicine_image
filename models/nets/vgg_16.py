@@ -43,6 +43,8 @@ def vgg_16(inputs,
             net = slim.max_pool2d(net, [2, 2], scope='pool3')
             net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv4')
             net = slim.max_pool2d(net, [2, 2], scope='pool4')
+            net = slim.repeat(net, 3, slim.conv2d, 512, [3, 3], scope='conv5')
+            net = slim.max_pool2d(net, [2, 2], scope='pool5')
 
             end_points = slim.utils.convert_collection_to_dict(
                 end_points_collection)

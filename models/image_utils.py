@@ -134,32 +134,28 @@ def partial_match_tensor_name(tensor_dict, name):
 def extract_feature_vgg(images,
                         is_training,
                         weight_decay=0.00004,
-                        output_layer='conv4/conv4_3',
-                        trainable=False,
-                        stddev=0.1):
+                        trainable=True):
     """
+    Deep MIML
+    Return: [N, I, F]
     """
-    if trainable:
-        weights_regularizer = tf.contrib.layers.l2_regularizer(weight_decay)
-    else:
-        weights_regularizer = None
+    normalized = image_preprocess(images)
+    _, T, H, W, C = normalized.get_shape().as_list()
+    N = tf.shape(normalized)[0]
     
-    images = image_preprocess(images)
-    with slim.arg_scope(
-        [slim.conv2d, slim.fully_connected],
-        weights_regularizer=weights_regularizer,
-            trainable=trainable):
-        with slim.arg_scope([slim.conv2d, slim.fully_connected],
-                            activation_fn=tf.nn.relu,
-                            weights_initializer=tf.truncated_normal_initializer(
-                                stddev=stddev),
-                            biases_initializer=tf.zeros_initializer()):
-            with slim.arg_scope([slim.conv2d], padding='SAME'):
-                net, end_points = vgg_16(
-                    images, is_training=is_training, scope='vgg_16')
-
-                output = partial_match_tensor_name(end_points, output_layer)
-
-    _, H, W, C = output.get_shape().as_list()
+    merge_dim = tf.reshape(
+        normalized, [-1, H, W, C], name='flatten_timestep')
     
-    return output
+    weights_regularizer = tf.contrib.layers.l2_regularizer(weight_decay)
+    with slim.arg_scope([slim.conv2d, slim.fully_connected],
+        weights_regularizer=weights_regularizer, trainable=trainable):
+        with slim.arg_scope([slim.conv2d], padding='SAME'):
+            net, _ = vgg_16(merge_dim, is_training=is_training)
+            #output = partial_match_tensor_name(end_points, 'pool4')
+    
+    _, H, W, C = net.get_shape().as_list()
+    recover_ts = tf.reshape(net, [-1, T, H, W, C], name='recover_timestep')
+    print(f"Feature map size: [_, {T}, {H}, {W}, {C}]")
+    instances = tf.reshape(recover_ts, [-1, T * H * W, C], name='instances')
+    
+    return instances
