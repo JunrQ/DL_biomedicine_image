@@ -27,7 +27,7 @@ class UrlDataFlow(DataFlow):
         """ Required by base class DataFlow
         """
         for _, row in self.dataframe.iterrows():
-            urls = row.image_url
+            urls = list(row.image_url)
             annots = row.annotation
             yield [urls, annots]
 
@@ -66,7 +66,7 @@ class DataManager(object):
         self.image_features = None
 
     @classmethod
-    def from_config(cls, config):
+    def from_config(cls, config, random_seed=123321123):
         """ Construct DataManager solely from config.
 
         The image table and annotation table are obtained from the csv files specified in config.
@@ -79,11 +79,11 @@ class DataManager(object):
             annot_table.annotation, config.annotation_number)
         image_table, annot_table = filter_labels(
             image_table, annot_table, vocab)
-        sep = separate(image_table, annot_table, config)
+        sep = separate(image_table, annot_table, config, random_seed)
         return cls(sep.train, sep.validation, sep.test, vocab, config)
 
     @classmethod
-    def from_dataset(cls, train_set, test_set, config, vocab=None):
+    def from_dataset(cls, train_set, test_set, config, vocab=None, random_seed=123321123):
         """ Construct DataManager from train set and test set.
 
         The train set can be further subdivided into a smaller train set and validation set.
@@ -111,9 +111,9 @@ class DataManager(object):
             train_imgs, train_annots, vocab)
         test_imgs, test_annots = filter_labels(test_imgs, test_annots, vocab)
 
-        train_sep = separate(train_imgs, train_annots, config)
+        train_sep = separate(train_imgs, train_annots, config, random_seed)
         config.proportion = {'train': 0.0, 'val': 0.0, 'test': 1.0}
-        test_sep = separate(test_imgs, test_annots, config)
+        test_sep = separate(test_imgs, test_annots, config, random_seed)
 
         return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
     
@@ -139,30 +139,33 @@ class DataManager(object):
         """
         return self.test_set
 
-    def get_train_stream(self):
+    def get_train_stream(self, batch_size=None):
         """ Data stream for training.
 
             A stream is a generator of batches.
             Usually it is managed by the train module in tensorpack. We
             don not need to tough it directly.
         """
-        stream = self._build_basic_stream(self.train_set)
+        batch_size = batch_size or self.config.batch_size
+        stream = self._build_basic_stream(self.train_set, batch_size)
         return stream
 
-    def get_validation_stream(self):
+    def get_validation_stream(self, batch_size=None):
         """ Data stream for validation.
 
             The data is cached for frequent reuse.
         """
-        stream = self._build_basic_stream(self.val_set)
+        batch_size = batch_size or self.config.batch_size
+        stream = self._build_basic_stream(self.val_set, batch_size)
         # validation set is small, so we cache it
         # stream = CacheData(stream)
         return stream
 
-    def get_test_stream(self):
+    def get_test_stream(self, batch_size=None):
         """ Data stream for test.
         """
-        stream = self._build_basic_stream(self.test_set)
+        batch_size = batch_size or self.config.batch_size
+        stream = self._build_basic_stream(self.test_set, batch_size)
         return stream
     
     def get_train_stream_si(self):
@@ -250,13 +253,13 @@ class DataManager(object):
         return stream
         
     
-    def _build_basic_stream(self, data_set):
+    def _build_basic_stream(self, data_set, batch_size):
         if self.overrided:
-            return self._stream_from_feature(data_set)
+            return self._stream_from_feature(data_set, batch_size)
         else:
-            return self._stream_from_url(data_set)
+            return self._stream_from_url(data_set, batch_size)
 
-    def _stream_from_feature(self, data_set):
+    def _stream_from_feature(self, data_set, batch_size):
         data_set = data_set.copy(deep=True)
         data_set.annotation = self.encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
@@ -264,7 +267,7 @@ class DataManager(object):
         # trim image sequence to max length, also shuffle squence
         max_len = self.config.max_sequence_length
         stream = MapDataComponent(stream,
-                                  lambda urls: cut_to_max_length(urls, max_len), 0)
+                                  lambda urls: cut_to_max_length(urls, max_len, self.config.shuffle_group), 0)
 
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
@@ -274,10 +277,10 @@ class DataManager(object):
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
                                   lambda imgs: pad_feature_input(imgs, self.config.max_sequence_length), 0)
-        stream = BatchData(stream, self.config.batch_size, remainder=True)
+        stream = BatchData(stream, batch_size, remainder=True)
         return stream   
         
-    def _stream_from_url(self, data_set):
+    def _stream_from_url(self, data_set, batch_size):
         data_set = data_set.copy(deep=True)
         data_set.annotation = self.encode_labels(data_set.annotation)
         stream = UrlDataFlow(data_set)
@@ -285,7 +288,7 @@ class DataManager(object):
         # trim image sequence to max length, also shuffle squence
         max_len = self.config.max_sequence_length
         stream = MapDataComponent(stream,
-                                  lambda urls: cut_to_max_length(urls, max_len), 0)
+                                  lambda urls: cut_to_max_length(urls, max_len, self.config.shuffle_group), 0)
 
         # add length info of image sequence into data points
         stream = MapData(stream, lambda dp: [dp[0], len(dp[0]), dp[1]])
@@ -301,7 +304,7 @@ class DataManager(object):
         # pad and stack images to Tensor(shape=[T, C, H, W])
         stream = MapDataComponent(stream,
                                   lambda imgs: pad_image_input(imgs, self.config.max_sequence_length), 0)
-        stream = BatchData(stream, self.config.batch_size, remainder=True)
+        stream = BatchData(stream, batch_size, remainder=True)
         return stream
 
     def encode_labels(self, labels):
@@ -351,9 +354,11 @@ def load_image_si(url, img_dir, img_size, downsample):
     return img
 
 
-def cut_to_max_length(url_list, max_len):
+def cut_to_max_length(url_list, max_len, shuffle):
     select_len = min(len(url_list), max_len)
-    return np.random.choice(url_list, select_len)
+    if shuffle:
+        np.random.shuffle(url_list)
+    return url_list[:select_len]
 
 
 def pad_feature_input(feature_list, max_len):

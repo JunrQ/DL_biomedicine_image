@@ -22,7 +22,7 @@ def image_preprocess(image):
         return image
 
 
-def extract_feature_resnet(images, is_training, weight_decay):
+def extract_feature_resnet(images, is_training, weight_decay, is_finetuning=False):
     """ Extract feature from image set.
 
     Args:
@@ -45,7 +45,10 @@ def extract_feature_resnet(images, is_training, weight_decay):
         normalized, shape=[-1, H, W, C], name='flatten_timestep')
     
     with slim.arg_scope(resnet_arg_scope(weight_decay=weight_decay)):
-        _, end_points = resnet_v2_101(merge_dim, is_training=is_training)
+        with slim.arg_scope([slim.conv2d], trainable=is_finetuning, weights_regularizer=None):
+            with slim.arg_scope([slim.batch_norm], trainable=is_finetuning and is_training):
+                _, end_points = resnet_v2_101(
+                    merge_dim, is_training=is_training)
 
     # features from resnet
     feature = end_points['resnet_v2_101/block3']

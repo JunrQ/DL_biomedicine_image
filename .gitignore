@@ -12,7 +12,4 @@ data/resnet_v2_101
 data/inception_resnet_v2
 data/vgg_16.ckpt
 train_log
-research/log
-research/transfer_log
-research/fresh_train
-research/single_label
+**/*log

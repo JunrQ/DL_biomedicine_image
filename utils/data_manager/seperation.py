@@ -13,7 +13,7 @@ class DataSep(namedtuple('DataSep', ['train', 'validation', 'test'])):
     pass
 
 
-def separate(image_table, annot_table, config):
+def separate(image_table, annot_table, config, random_seed):
     """ Separate data set into train, validation and test set.
 
     Args:
@@ -28,7 +28,7 @@ def separate(image_table, annot_table, config):
     merged_table = _merge_image_and_annot(image_table, annot_table)
 
     if config.shuffle_separation:
-        merged_table = merged_table.sample(frac=1, random_state=123321123)
+        merged_table = merged_table.sample(frac=1, random_state=random_seed)
 
     test_set, remain = _seperate_one_part(
         merged_table, config.proportion['test'], config.tolerance_margin)

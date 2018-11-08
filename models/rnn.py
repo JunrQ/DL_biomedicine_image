@@ -224,7 +224,7 @@ class RNN(ModelDesc):
         if not self.config.use_foreign:
             image, length, label = inputs
             feature = extract_feature_resnet(
-                image, ctx.is_training, self.config.weight_decay)
+                image, ctx.is_training, self.config.weight_decay, self.is_finetuning)
             feature = tf.identity(feature, name='feature')
         else:
             feature, length, label = inputs
@@ -269,6 +269,8 @@ class RNN(ModelDesc):
                                       scope='logits')
         # gave logits a reasonable name, so one can access it easily. (e.g. via get_variable(name))
         logits = tf.identity(logits, name='logits_export')
+        # export score
+        _score = tf.sigmoid(logits, name="score_export")
         loss = focal_loss(logits, label, self.config.gamma, self.scale)
         loss += self._ds_att_loss(accu_att, length)
         loss = tf.identity(loss, name='loss/value')
