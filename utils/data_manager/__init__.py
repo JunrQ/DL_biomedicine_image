@@ -55,15 +55,17 @@ class DataManager(object):
     """ Complete data pipeline.
     """
 
-    def __init__(self, train_set, val_set, test_set, vocab, config):
+    def __init__(self, train_set, val_set, test_set, vocab, config, total_annot):
         vocab.sort()
         self.train_set = train_set
         self.val_set = val_set
         self.test_set = test_set
         self.binarizer = MultiLabelBinarizer(classes=vocab)
         self.config = config
+        self.total_annot = total_annot
         self.overrided = False
         self.image_features = None
+
 
     @classmethod
     def from_config(cls, config, random_seed=123321123):
@@ -75,12 +77,12 @@ class DataManager(object):
         annot_table = load_annot_table(config.annotation_table_location)
         image_table, annot_table = filter_stages_and_directions(
             image_table, annot_table, config.stages, config.directions)
-        vocab = _extract_top_vocab(
+        vocab, total = _extract_top_vocab(
             annot_table.annotation, config.annotation_number)
         image_table, annot_table = filter_labels(
             image_table, annot_table, vocab)
         sep = separate(image_table, annot_table, config, random_seed)
-        return cls(sep.train, sep.validation, sep.test, vocab, config)
+        return cls(sep.train, sep.validation, sep.test, vocab, config, total)
 
     @classmethod
     def from_dataset(cls, train_set, test_set, config, vocab=None, random_seed=123321123):
@@ -102,8 +104,9 @@ class DataManager(object):
         test_imgs, test_annots = filter_stages_and_directions(
             test_imgs, test_annots, config.stages, config.directions)
 
+        total = None
         if vocab is None:
-            vocab = _extract_common_top_vocab(
+            vocab, total = _extract_common_top_vocab(
                 train_annots.annotation, test_annots.annotation,
                 config.annotation_number)
 
@@ -115,7 +118,7 @@ class DataManager(object):
         config.proportion = {'train': 0.0, 'val': 0.0, 'test': 1.0}
         test_sep = separate(test_imgs, test_annots, config, random_seed)
 
-        return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config)
+        return cls(train_sep.train, train_sep.validation, test_sep.test, vocab, config, total)
     
     def override_feature(self, feature):
         self.overrided = True
@@ -196,10 +199,15 @@ class DataManager(object):
         return df
     
     def get_label_info(self):
+        train = self._label_count(self.train_set)
+        val = self._label_count(self.val_set)
+        test = self._label_count(self.test_set)
+        
         df = pd.DataFrame(index=self.binarizer.classes)
-        df['train'] = self._label_count(self.train_set)
-        df['val'] = self._label_count(self.val_set)
-        df['test'] = self._label_count(self.test_set)
+        df['train'] = train
+        df['val'] = val
+        df['test'] = test
+        df['total'] = (train + val + test).astype(int)
         
         return df.sort_values('train', ascending=False)
 
@@ -319,21 +327,22 @@ def select_label(ds, index):
 
 def _extract_top_vocab(annots, num):
     all_words = pd.Series(seq(annots).flat_map(lambda l: l).list())
+    total = all_words.unique().shape[0]
     if num is None:
         vocab = all_words.unique()
     else:
         vocab = all_words.value_counts().nlargest(num).index.values
-    return vocab
+    return vocab, total
 
 
 def _extract_common_top_vocab(annots_one, annots_two, num):
     try_num = num
     while True:
-        vocab_one = set(_extract_top_vocab(annots_one, try_num))
-        vocab_two = set(_extract_top_vocab(annots_two, try_num))
+        vocab_one = set(_extract_top_vocab(annots_one, try_num)[0])
+        vocab_two = set(_extract_top_vocab(annots_two, try_num)[0])
         common = vocab_one.intersection(vocab_two)
         if len(common) >= num:
-            return seq(common).take(num).list()
+            return seq(common).take(num).list(), None
         try_num += 1
         if try_num - num >= 5:
             raise ValueError(f"After {try_num - num} times operation "
